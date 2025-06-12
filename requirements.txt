@@ -79,7 +79,7 @@ pyproject_hooks==1.1.0
 python-dotenv==1.0.1
 PyYAML==6.0.2
 RapidFuzz==3.11.0
-requests==2.32.3
+requests==2.32.4
 requests-toolbelt==1.0.0
 resolvelib==1.0.1
 rich==13.8.1
