@@ -26,7 +26,7 @@ filelock==3.16.0
 findpython==0.6.1
 frozenlist==1.5.0
 greenlet==3.1.1
-h11==0.14.0
+h11==0.16.0
 hishel==0.0.30
 httpcore==1.0.5
 httpx==0.27.2
