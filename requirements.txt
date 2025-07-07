@@ -16,7 +16,7 @@ charset-normalizer==3.4.1
 cleo==2.1.0
 click==8.2.1
 crashtest==0.4.1
-cryptography==44.0.0
+cryptography==44.0.1
 dataclasses-json==0.6.7
 dep-logic==0.4.6
 dill==0.4.0
