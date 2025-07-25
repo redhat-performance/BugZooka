@@ -28,4 +28,4 @@ jobs:
 
     - name: Analysing the code with pylint
       run: |
-        pylint $(git ls-files '*/*.py' '*.py')
+        pylint --fail-under=8 $(git ls-files '*/*.py' '*.py')

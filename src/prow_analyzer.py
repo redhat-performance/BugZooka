@@ -19,7 +19,9 @@ def get_cluster_operator_errors(directory_path):
     :return: list of errors
     """
     try:
-        with open(f"{directory_path}/clusteroperators.json", "r") as f:
+        with open(
+            f"{directory_path}/clusteroperators.json", "r", encoding="utf-8"
+        ) as f:
             cluster_operators_data = json.load(f)
         err_conditions = []
         for each_item in cluster_operators_data["items"]:
@@ -36,7 +38,7 @@ def get_cluster_operator_errors(directory_path):
                     condition["status"].append(each_dict)
         return err_conditions
     except Exception as e:
-        logger.error(f"Failed to fetch log file: {e}")
+        logger.error("Failed to fetch log file: %s", e)
         return []
 
 
@@ -70,15 +72,15 @@ def analyze_prow_artifacts(directory_path, job_name):
         return [
             "Prow maintanence issues, couldn't even find the build-log.txt file"
         ], False
-    with open(build_file_path, "r", errors="replace") as f:
-        matched_line = next((line.strip()
-                            for line in f if pattern.search(line)), None)
+    with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
+        matched_line = next((line.strip() for line in f if pattern.search(line)), None)
         if matched_line is None:
-            matched_line = "Couldn't identify the failure step, likely a maintanence issue"
-    cluster_operators_file_path = os.path.join(
-        directory_path, "clusteroperators.json")
+            matched_line = (
+                "Couldn't identify the failure step, likely a maintanence issue"
+            )
+    cluster_operators_file_path = os.path.join(directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
-        with open(build_file_path, 'r', errors='replace') as f:
+        with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
             build_log_content = list(deque(f, maxlen=BUILD_LOG_TAIL))
         return [
             "\n Somehow couldn't find clusteroperators.json file",
@@ -89,7 +91,6 @@ def analyze_prow_artifacts(directory_path, job_name):
     if len(cluster_operator_errors) == 0:
         orion_errors = scan_orion_xmls(directory_path)
         if len(orion_errors) == 0:
-            return [matched_line] + \
-                search_prow_errors(directory_path, job_name), True
+            return [matched_line] + search_prow_errors(directory_path, job_name), True
         return [matched_line + "\n"] + orion_errors, False
     return [matched_line + "\n"] + cluster_operator_errors, False

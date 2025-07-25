@@ -8,7 +8,7 @@ def load_xml_as_dict(xml_path):
     :param xml_path: xml file path
     :return: xml to dictionary
     """
-    with open(xml_path, "r") as f:
+    with open(xml_path, "r", encoding="utf-8") as f:
         return xmltodict.parse(f.read())
 
 
@@ -28,7 +28,8 @@ def extract_orion_changepoint_context(failure_text):
         if "uuid" in line and "timestamp" in line:
             header_line = (
                 f"| {'idx':<3} | {'uuid':<4} | {'timestamp':<10} | {'buildUrl':<10} | "
-                f"{'metric':<10} | {'is_changepoint':<15} | {'percentage_change':<20} |")
+                f"{'metric':<10} | {'is_changepoint':<15} | {'percentage_change':<20} |"
+            )
         if "-- changepoint" in line:
             changepoint_idx = i
             break
@@ -57,21 +58,22 @@ def summarize_orion_xml(xml_path):
     """
     xml_root = load_xml_as_dict(xml_path)
     for testsuite in xml_root.values():
-        if "testsuite" in testsuite:
-            ts = testsuite["testsuite"]
-            if "@failures" in ts and int(ts["@failures"]) > 0:
-                for each_case in ts["testcase"]:
-                    if "failure" in each_case:
-                        failure_output = each_case["failure"]
-                        changepoint_str = extract_orion_changepoint_context(
-                            failure_output
-                        )
-                        if changepoint_str == "No changepoint found.":
-                            return ""
-                        else:
-                            return (
-                                f"\n--- Test Case: {each_case['@name']} ---\n"
-                                + changepoint_str
-                            )
+        if "testsuite" not in testsuite:
+            continue
+
+        ts = testsuite["testsuite"]
+        if "@failures" not in ts or int(ts["@failures"]) <= 0:
+            continue
+
+        for each_case in ts["testcase"]:
+            if "failure" not in each_case:
+                continue
+
+            failure_output = each_case["failure"]
+            changepoint_str = extract_orion_changepoint_context(failure_output)
+            if changepoint_str == "No changepoint found.":
+                return ""
+
+            return f"\n--- Test Case: {each_case['@name']} ---\n" + changepoint_str
 
     return ""

@@ -21,7 +21,7 @@ def extract_job_details(text):
             return url_match.group(0), name_match.group(1)
         return None, None
     except Exception as e:
-        logger.error(f"Failure in extracting job details: {e}")
+        logger.error("Failure in extracting job details: %s", e)
         return None, None
 
 
@@ -32,7 +32,7 @@ def run_shell_command(command):
     :param command: shell command to execute
     :return: command output
     """
-    logger.info(f"Executing: {command}")
+    logger.info("Executing: %s", command)
     result = subprocess.run(
         command, shell=True, check=True, capture_output=True, text=True
     )
@@ -61,11 +61,11 @@ def download_file_from_gcs(gcs_url, local_path):
     command = f"gsutil -m cp -r {gcs_url} {local_path}"
     file_name = gcs_url.strip("/").split("/")[-1]
     try:
-        logger.info(f"Downloading {file_name}...")
+        logger.info("Downloading %s...", file_name)
         subprocess.run(command, shell=True, check=True)
-        logger.info(f"{file_name} downloaded successfully.")
+        logger.info("%s downloaded successfully.", file_name)
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error downloading {file_name}: {e}")
+        logger.error("Error downloading %s: %s", file_name, e)
 
 
 def filter_most_frequent_errors(full_errors, frequent_errors):
@@ -76,7 +76,7 @@ def filter_most_frequent_errors(full_errors, frequent_errors):
     :param frequent_errors: frequent list of errors
     :return: most significant set of errors
     """
-    frequency_map = dict()
+    frequency_map = {}
     for entry in frequent_errors:
         trimmed = entry.strip()
         parts = trimmed.split(" ", 1)
@@ -114,15 +114,17 @@ def get_slack_message_blocks(markdown_header, preformatted_text):
     :param preformatted_text: preformatted text message
     :return: a sanitized version of text blocks
     """
-    return [{"type": "section",
-             "text": {"type": "mrkdwn",
-                      "text": markdown_header}},
-            {"type": "rich_text",
-             "block_id": "error_logs_block",
-             "elements": [{"type": "rich_text_preformatted",
-                           "elements": [{"type": "text",
-                                         "text": preformatted_text.strip()}],
-                           "border": 0,
-                           }],
-             },
-            ]
+    return [
+        {"type": "section", "text": {"type": "mrkdwn", "text": markdown_header}},
+        {
+            "type": "rich_text",
+            "block_id": "error_logs_block",
+            "elements": [
+                {
+                    "type": "rich_text_preformatted",
+                    "elements": [{"type": "text", "text": preformatted_text.strip()}],
+                    "border": 0,
+                }
+            ],
+        },
+    ]

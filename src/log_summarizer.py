@@ -3,8 +3,9 @@ import os
 import re
 import subprocess
 from collections import deque
-from src.constants import MAX_CONTEXT_SIZE
 import requests
+
+from src.constants import MAX_CONTEXT_SIZE
 from src.prompts import ERROR_SUMMARIZATION_PROMPT
 from src.utils import (
     download_file_from_gcs,
@@ -84,7 +85,7 @@ def download_prow_orion_xmls(gcs_path, output_dir):
             download_file_from_gcs(xml_url, output_dir)
 
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error processing Orion XMLs: {e.stderr}")
+        logger.error("Error processing Orion XMLs: %s", e.stderr)
 
 
 def download_prow_cluster_operators(gcs_path, output_dir):
@@ -100,10 +101,10 @@ def download_prow_cluster_operators(gcs_path, output_dir):
         if not log_folder_path:
             return
         download_file_from_gcs(
-            f"{log_folder_path}gather-extra/artifacts/clusteroperators.json",
-            output_dir)
+            f"{log_folder_path}gather-extra/artifacts/clusteroperators.json", output_dir
+        )
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error downloading clusteroperators.json: {e.stderr}")
+        logger.error("Error downloading clusteroperators.json: %s", e.stderr)
 
 
 def download_prow_logs(url, output_dir="/tmp/"):
@@ -148,30 +149,28 @@ def get_logjuicer_extract(directory_path, job_name):
     url = f"https://raw.githubusercontent.com/vishnuchalla/ocp-qe-prow-build-logs/main/{job_name}.txt"
 
     try:
-        logger.info(f"Attempting to download log file from: {url}")
+        logger.info("Attempting to download log file from: %s", url)
         response = requests.get(url, timeout=10)
         response.raise_for_status()
 
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(response.text)
-        logger.info(f"Downloaded and saved to: {file_path}")
+        logger.info("Downloaded and saved to: %s", file_path)
         try:
             full_errors_cmd = f"logjuicer diff {file_path} {directory_path}/build-log.txt | cut -d '|' -f2- | grep -i -e 'error' -e 'failure' -e 'exception' -e 'fatal' -e 'panic'"
             full_errors = run_shell_command(full_errors_cmd)
         except Exception as e:
-            logger.error(
-                f"Failed to execute logjuicer full errors command: {e}")
+            logger.error("Failed to execute logjuicer full errors command: %s", e)
             return None
         try:
             frequent_errors_cmd = f"logjuicer diff {file_path} {directory_path}/build-log.txt | cut -d '|' -f2- | logmine | grep -i -e 'error' -e 'failure' -e 'exception' -e 'fatal' -e 'panic'"
             frequent_errors = run_shell_command(frequent_errors_cmd)
             return filter_most_frequent_errors(full_errors, frequent_errors)
         except Exception as e:
-            logger.error(
-                f"Failed to execute logjuicer frequent errors command: {e}")
+            logger.error("Failed to execute logjuicer frequent errors command: %s", e)
             return full_errors
     except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to fetch log file: {e}")
+        logger.error("Failed to fetch log file: %s", e)
         return None
 
 
@@ -186,14 +185,14 @@ def get_logmine_extract(directory_path):
         full_errors_cmd = f"cat {directory_path}/build-log.txt | cut -d '|' -f2- | grep -i -e 'error' -e 'failure' -e 'exception' -e 'fatal' -e 'panic'"
         full_errors = run_shell_command(full_errors_cmd)
     except Exception as e:
-        logger.error(f"Failed to execute full errors command: {e}")
+        logger.error("Failed to execute full errors command: %s", e)
         return None
     try:
         frequent_errors_cmd = f"cat {directory_path}/build-log.txt | cut -d '|' -f2- | logmine | grep -i -e 'error' -e 'failure' -e 'exception' -e 'fatal' -e 'panic'"
         frequent_errors = run_shell_command(frequent_errors_cmd)
         return filter_most_frequent_errors(full_errors, frequent_errors)
     except Exception as e:
-        logger.error(f"Failed to execute logmine frequent errors command: {e}")
+        logger.error("Failed to execute logmine frequent errors command: %s", e)
         return full_errors
 
 
@@ -222,20 +221,19 @@ def download_url_to_log(url, log_file_path):
     output_dir = "/tmp"
     log_file_path = output_dir + log_file_path
 
-    logger.info(f"Creating a file {log_file_path}")
+    logger.info("Creating a file %s", log_file_path)
     try:
-        response = requests.get(url, stream=True, verify=False)
+        response = requests.get(url, stream=True, verify=False, timeout=30)
         response.raise_for_status()
-        with open(log_file_path, 'wb') as file:
+        with open(log_file_path, "wb") as file:
             for chunk in response.iter_content(chunk_size=MAX_CONTEXT_SIZE):
                 file.write(chunk)
-        logger.info(
-            f"Successfully downloaded content from {url} to {log_file_path}")
+        logger.info("Successfully downloaded content from %s to %s", url, log_file_path)
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error downloading from {url}: {e}")
+        logger.error("Error downloading from %s: %s", url, e)
     except Exception as e:
-        logger.error(f"An error occurred: {e}")
+        logger.error("An error occurred: %s", e)
     return output_dir
 
 
@@ -267,15 +265,15 @@ def search_errors_in_file(file_path, context_lines=3):
 
         if error_contexts:
             logger.info(
-                f"Found {len(error_contexts)} errors with context in {file_path}:"
+                "Found %s errors with context in %s:", len(error_contexts), file_path
             )
             return error_contexts
-        else:
-            logger.info(f"No errors found in {file_path}.")
-            return []
+
+        logger.info("No errors found in %s.", file_path)
+        return []
 
     except Exception as e:
-        logger.error(f"Error opening the file {file_path}: {e}")
+        logger.error("Error opening the file %s: %s", file_path, e)
         return []
 
 
@@ -288,10 +286,13 @@ def generate_prompt(error_list):
     """
     # Convert to messages list format
     messages = [
+        {"role": "system", "content": ERROR_SUMMARIZATION_PROMPT["system"]},
         {
-            "role": "system", "content": ERROR_SUMMARIZATION_PROMPT["system"]}, {
-            "role": "user", "content": ERROR_SUMMARIZATION_PROMPT["user"].format(
-                error_list="\n".join(error_list)[
-                    :MAX_CONTEXT_SIZE])}, {
-                        "role": "assistant", "content": ERROR_SUMMARIZATION_PROMPT["assistant"]}]
+            "role": "user",
+            "content": ERROR_SUMMARIZATION_PROMPT["user"].format(
+                error_list="\n".join(error_list)[:MAX_CONTEXT_SIZE]
+            ),
+        },
+        {"role": "assistant", "content": ERROR_SUMMARIZATION_PROMPT["assistant"]},
+    ]
     return messages

@@ -1,23 +1,41 @@
 import logging
 
 import requests
-from src.constants import GENERIC, INFERENCE_TOP_P, INFERENCE_FREQUENCY_PENALTY, INFERENCE_TEMPERATURE, INFERENCE_MAX_TOKENS
+from src.constants import (
+    GENERIC,
+    INFERENCE_TOP_P,
+    INFERENCE_FREQUENCY_PENALTY,
+    INFERENCE_TEMPERATURE,
+    INFERENCE_MAX_TOKENS,
+    INFERENCE_API_TIMEOUT_SECONDS,
+)
+
+
+class InferenceAPIUnavailableError(Exception):
+    """Raised when the inference API is unavailable."""
+
+
+class AgentAnalysisLimitExceededError(Exception):
+    """Raised when the agent analysis exceeds iteration or time limits."""
+
 
 logger = logging.getLogger(__name__)
 
 
 def ask_inference_api(
-        messages,
-        url,
-        api_token,
-        model,
-        top_p=INFERENCE_TOP_P,
-        frequency_penalty=INFERENCE_FREQUENCY_PENALTY,
-        temperature=INFERENCE_TEMPERATURE,
-        max_tokens=INFERENCE_MAX_TOKENS,
-        organization=None,
-        cache=None,
-        verbose=False):
+    messages,
+    url,
+    api_token,
+    model,
+    top_p=INFERENCE_TOP_P,
+    frequency_penalty=INFERENCE_FREQUENCY_PENALTY,
+    temperature=INFERENCE_TEMPERATURE,
+    max_tokens=INFERENCE_MAX_TOKENS,
+    organization=None,
+    cache=None,
+    verbose=False,
+    timeout=INFERENCE_API_TIMEOUT_SECONDS,
+):
     """
     Sends a request to the inference API with configurable parameters.
 
@@ -32,6 +50,7 @@ def ask_inference_api(
     :param organization: Optional organization ID
     :param cache: Optional cache settings
     :param verbose: If True, prints additional logs
+    :param timeout: Request timeout in seconds (default: INFERENCE_API_TIMEOUT_SECONDS)
     :return: AI response text or an error message
     """
     headers = {
@@ -56,11 +75,11 @@ def ask_inference_api(
         payload["cache"] = cache
 
     if verbose:
-        logger.info("Sending request with payload:", payload)
+        logger.info("Sending request with payload: %s", payload)
 
     try:
         response = requests.post(
-            f"{url}/v1/chat/completions", json=payload, headers=headers
+            f"{url}/v1/chat/completions", json=payload, headers=headers, timeout=timeout
         )
         response.raise_for_status()
         return (
@@ -70,8 +89,29 @@ def ask_inference_api(
             .get("content", "No content returned.")
         )
 
+    except requests.exceptions.Timeout as e:
+        logger.error(
+            "Request to inference API timed out after %s seconds: %s", timeout, e
+        )
+        raise InferenceAPIUnavailableError(
+            f"Request timed out after {timeout} seconds"
+        ) from e
+    except requests.exceptions.ConnectionError as e:
+        logger.error(
+            "Connection error occurred while connecting to inference API: %s", e
+        )
+        raise InferenceAPIUnavailableError("Connection error to inference API") from e
+    except requests.exceptions.HTTPError as e:
+        logger.error("HTTP error occurred while connecting to inference API: %s", e)
+        raise InferenceAPIUnavailableError(
+            f"HTTP error {e.response.status_code}"
+        ) from e
     except requests.exceptions.RequestException as e:
-        return f"Request failed: {e}"
+        logger.error(
+            "Request failed with unexpected error while connecting to inference API: %s",
+            e,
+        )
+        raise InferenceAPIUnavailableError("Request failed") from e
 
 
 def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
@@ -90,8 +130,7 @@ def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
                 error_summary=error_summary
             )
         except KeyError:
-            formatted_content = prompt_config["user"].format(
-                summary=error_summary)
+            formatted_content = prompt_config["user"].format(summary=error_summary)
 
         messages = [
             {"role": "system", "content": prompt_config["system"]},
@@ -108,8 +147,8 @@ def analyze_log(product: str, product_config: dict, error_summary: str) -> str:
         )
 
     except Exception as e:
-        logger.error(f"Error analyzing {product} log: {e}")
-        return f"Error analyzing log: {e}"
+        logger.error("Error analyzing %s log: %s", product, e)
+        raise InferenceAPIUnavailableError(f"Error analyzing {product} log") from e
 
 
 def analyze_product_log(product, product_config, error_summary):
