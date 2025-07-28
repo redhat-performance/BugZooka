@@ -67,6 +67,9 @@ COPY --from=builder /usr/bin/gsutil /usr/bin/gsutil
 # Copy logjuicer binary from builder stage
 COPY --from=builder /usr/local/bin/logjuicer /usr/local/bin/logjuicer
 
+# Create /app directory and change ownership
+RUN mkdir -p /app && chown appuser:appuser /app
+
 # Set working directory
 WORKDIR /app
 
