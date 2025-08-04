@@ -111,7 +111,7 @@ class SlackMessageFetcher:
     def _send_analysis_result(self, response, max_ts):
         """Send the final analysis result to Slack."""
         message_block = get_slack_message_blocks(
-            markdown_header=":fast_forward: *Implications to understand*\n",
+            markdown_header=":fast_forward: *Implications to understand (AI generated) *\n",
             preformatted_text=response,
         )
         self.logger.info("Posting analysis summary to Slack")
