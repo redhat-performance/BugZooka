@@ -73,14 +73,14 @@ class SlackMessageFetcher:
                     )
         return new_messages
 
-    def _send_error_logs_preview(self, errors_list, max_ts, is_install_issue=False):
+    def _send_error_logs_preview(self, errors_list, categorization_message, max_ts, is_install_issue=False):
         """Send error logs preview to Slack (either as message or file)."""
         errors_log_preview = "\n".join(errors_list or [])[:MAX_PREVIEW_CONTENT]
         errors_list_string = "\n".join(errors_list or [])[:MAX_CONTEXT_SIZE]
 
         if len(errors_list_string) > MAX_PREVIEW_CONTENT:
             preview_message = (
-                ":checking: *Error Logs Preview*\n"
+                f":checking: *Error Logs Preview ({categorization_message})*\n"
                 "Here are the first few lines of the error log:\n"
                 f"```{errors_log_preview.strip()}```\n"
                 "_(Log preview truncated. Full log attached below.)_"
@@ -98,7 +98,7 @@ class SlackMessageFetcher:
         else:
             self.logger.info("📤 Trying to just send the preview message")
             message_block = get_slack_message_blocks(
-                markdown_header=":checking: *Error Logs Preview*\n",
+                markdown_header=f":checking: *Error Logs Preview ({categorization_message})*\n",
                 preformatted_text=f"{errors_log_preview.strip()}",
             )
             self.client.chat_postMessage(
@@ -168,12 +168,12 @@ class SlackMessageFetcher:
             return ts
 
         # Extract and download logs
-        errors_list, requires_llm, is_install_issue = download_and_analyze_logs(text, ci_system)
+        errors_list, categorization_message, requires_llm, is_install_issue = download_and_analyze_logs(text, ci_system)
         if errors_list is None:
             return ts
 
         # Send error logs preview first
-        self._send_error_logs_preview(errors_list, ts, is_install_issue)
+        self._send_error_logs_preview(errors_list, categorization_message, ts, is_install_issue)
 
         if is_install_issue or not enable_inference:
             return ts

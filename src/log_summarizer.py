@@ -29,6 +29,18 @@ def download_prow_build_log(gcs_path, output_dir):
     download_file_from_gcs(file_url, output_dir)
 
 
+def download_prow_junit_operator_xml(gcs_path, output_dir):
+    """
+    Download the junit_operator.xml file.
+
+    :param gcs_path: path in gcs storage
+    :param output_dir: output directory to store artifacts
+    :return: None
+    """
+    file_url = f"gs://{gcs_path}/artifacts/junit_operator.xml"
+    download_file_from_gcs(file_url, output_dir)
+
+
 def get_prow_inner_artifact_files(gcs_path):
     """
     Given a GCS path to a Prow job, return the list of files inside the nested log folder
@@ -132,6 +144,7 @@ def download_prow_logs(url, output_dir="/tmp/"):
     os.makedirs(orion_dir, exist_ok=True)
 
     download_prow_build_log(gcs_path, log_dir)
+    download_prow_junit_operator_xml(gcs_path, log_dir)
     download_prow_cluster_operators(gcs_path, log_dir)
     download_prow_orion_xmls(gcs_path, orion_dir)
 

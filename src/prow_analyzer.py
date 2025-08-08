@@ -4,9 +4,13 @@ import os
 import re
 from collections import deque
 from pathlib import Path
-from src.constants import BUILD_LOG_TAIL
-from src.xmlparser import summarize_orion_xml
+from src.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
 from src.log_summarizer import search_prow_errors
+from src.utils import categorize_prow_failure
+from src.xmlparser import (
+    summarize_orion_xml, 
+    summarize_junit_operator_xml
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,21 +68,35 @@ def analyze_prow_artifacts(directory_path, job_name):
 
     :param directory_path: directory path for the artifacts
     :param job_name: job name to base line with
-    :return: tuple of (list of errors, requires_llm, is_install_issue)
+    :return: tuple of (list of errors, categorization_message, requires_llm, is_install_issue)
     """
+    step_summary = ""
+    categorization_message = ""
     pattern = re.compile(r"Logs for container test in pod .*")
+    timestamp_strip = re.compile(r"^\x1b\[[0-9;]*m\w*\x1b\[0m\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]\s*")
     build_file_path = os.path.join(directory_path, "build-log.txt")
     if not os.path.isfile(build_file_path):
         return [
             "Prow maintanence issues, couldn't even find the build-log.txt file"
-        ], False, True
+        ], MAINTENANCE_ISSUE, False, True
     with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
-        matched_line = next((line.strip() for line in f if pattern.search(line)), None)
+        matched_line = next(
+            (
+                timestamp_strip.sub("", line).strip()
+                for line in f
+                if pattern.search(timestamp_strip.sub("", line))
+            ),
+            None
+        )
         if matched_line is None:
             matched_line = (
                 "Couldn't identify the failure step, likely a maintanence issue"
             )
-            return [matched_line], False, True
+            return [matched_line], MAINTENANCE_ISSUE, False, True
+    junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
+    if os.path.isfile(junit_operator_file_path):
+        step_phase, step_name, step_summary = summarize_junit_operator_xml(junit_operator_file_path)
+        categorization_message = categorize_prow_failure(step_name, step_phase)
     cluster_operators_file_path = os.path.join(directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
         with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
@@ -86,12 +104,12 @@ def analyze_prow_artifacts(directory_path, job_name):
         return [
             "\n Somehow couldn't find clusteroperators.json file",
             matched_line + "\n",
-            "\n".join(build_log_content),
-        ], False, True
+            [step_summary] + "\n".join(build_log_content),
+        ], categorization_message, False, True
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
         orion_errors = scan_orion_xmls(directory_path)
         if len(orion_errors) == 0:
-            return [matched_line] + search_prow_errors(directory_path, job_name), True, False
-        return [matched_line + "\n"] + orion_errors, False, False
-    return [matched_line + "\n"] + cluster_operator_errors, False, False
+            return [matched_line] + [step_summary] + search_prow_errors(directory_path, job_name), categorization_message, True, False
+        return [matched_line + "\n"] + orion_errors, categorization_message, False, False
+    return [matched_line + "\n"] + cluster_operator_errors, categorization_message, False, False

@@ -49,6 +49,55 @@ def list_gcs_files(gcs_path):
     command = f"gsutil ls {gcs_path}"
     return run_shell_command(command)
 
+def extract_prow_test_phase(case_name):
+    """
+    Identifies the prow test phase.
+
+    :param case_name: name of the case
+    :return: phase
+    """
+    for keyword in ("pre", "post", "test"):
+        if f"{keyword} phase" in case_name:
+            return keyword
+    return None
+
+
+def categorize_prow_failure(step_name, step_phase):
+    """
+    Categorize prow failures.
+
+    :param step_name: step name
+    :param step_phase: step phase
+    :return: categorized preview tag message
+    """
+    failure_map = {
+        "provision": "provision failure",
+        "deprovision": "deprovision failure",
+        "gather": "must gather failure",
+        "orion": "change point detection failure",
+        "cerberus": "cerberus health check failure",
+        "node-readiness": "nodes readiness check failure",
+        "openshift-qe": "workload failure",
+        "upgrade": "upgrade failure"
+    }
+
+    for keyword, description in failure_map.items():
+        if keyword in step_name:
+            return f"{step_phase} phase: {description}"
+
+    return f"{step_phase} phase: {step_name} step failure"
+
+
+def extract_prow_test_name(case_name):
+    """
+    Extracts prow test name from a given string.
+
+    :param case_name: name of the case
+    :return: name of the test
+    """
+    match = re.search(r'(?<=-\s)(.+?)(?=\s+container)', case_name)
+    return match.group(1) if match else None
+
 
 def download_file_from_gcs(gcs_url, local_path):
     """

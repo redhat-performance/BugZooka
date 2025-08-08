@@ -42,7 +42,7 @@ def download_and_analyze_logs(text, ci_system):
         if job_url is None or job_name is None:
             return None, None, None
         directory_path = download_prow_logs(job_url)
-        errors_list, requires_llm, is_install_issue = analyze_prow_artifacts(directory_path, job_name)
+        errors_list, categorization_message, requires_llm, is_install_issue = analyze_prow_artifacts(directory_path, job_name)
     else:
         # Pre-assumes the other ci system is ansible
         url_pattern = r"<([^>]+)>"
@@ -53,10 +53,11 @@ def download_and_analyze_logs(text, ci_system):
         logger.info("Ansible job url: %s", url)
         directory_path = download_url_to_log(url, "/build-log.txt")
         errors_list = search_errors_in_file(directory_path + "/build-log.txt")
+        categorization_message = ""
         requires_llm = True  # Assuming you want LLM for ansible too?
         is_install_issue = False
 
-    return errors_list, requires_llm, is_install_issue
+    return errors_list, categorization_message, requires_llm, is_install_issue
 
 
 def filter_errors_with_llm(errors_list, requires_llm, product_config):
