@@ -68,18 +68,26 @@ def analyze_prow_artifacts(directory_path, job_name):
 
     :param directory_path: directory path for the artifacts
     :param job_name: job name to base line with
-    :return: tuple of (list of errors, requires_llm, is_install_issue)
+    :return: tuple of (list of errors, categorization_message, requires_llm, is_install_issue)
     """
     step_summary = ""
     categorization_message = ""
     pattern = re.compile(r"Logs for container test in pod .*")
+    timestamp_strip = re.compile(r"^\x1b\[[0-9;]*m\w*\x1b\[0m\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]\s*")
     build_file_path = os.path.join(directory_path, "build-log.txt")
     if not os.path.isfile(build_file_path):
         return [
             "Prow maintanence issues, couldn't even find the build-log.txt file"
         ], MAINTENANCE_ISSUE, False, True
     with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
-        matched_line = next((line.strip() for line in f if pattern.search(line)), None)
+        matched_line = next(
+            (
+                timestamp_strip.sub("", line).strip()
+                for line in f
+                if pattern.search(timestamp_strip.sub("", line))
+            ),
+            None
+        )
         if matched_line is None:
             matched_line = (
                 "Couldn't identify the failure step, likely a maintanence issue"
@@ -96,12 +104,12 @@ def analyze_prow_artifacts(directory_path, job_name):
         return [
             "\n Somehow couldn't find clusteroperators.json file",
             matched_line + "\n",
-            "\n".join(build_log_content) + [step_summary],
+            [step_summary] + "\n".join(build_log_content),
         ], categorization_message, False, True
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
         orion_errors = scan_orion_xmls(directory_path)
         if len(orion_errors) == 0:
-            return [matched_line] + search_prow_errors(directory_path, job_name) + [step_summary], categorization_message, True, False
+            return [matched_line] + [step_summary] + search_prow_errors(directory_path, job_name), categorization_message, True, False
         return [matched_line + "\n"] + orion_errors, categorization_message, False, False
     return [matched_line + "\n"] + cluster_operator_errors, categorization_message, False, False

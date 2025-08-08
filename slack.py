@@ -98,7 +98,7 @@ class SlackMessageFetcher:
         else:
             self.logger.info("📤 Trying to just send the preview message")
             message_block = get_slack_message_blocks(
-                markdown_header=":checking: *Error Logs Preview*\n",
+                markdown_header=f":checking: *Error Logs Preview ({categorization_message})*\n",
                 preformatted_text=f"{errors_log_preview.strip()}",
             )
             self.client.chat_postMessage(
