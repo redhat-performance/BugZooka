@@ -19,6 +19,10 @@ SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", None)
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", None)
 JEDI_BOT_SLACK_USER_ID = os.getenv("JEDI_BOT_SLACK_USER_ID", None)
 
+# Analysis mode configuration
+# Options: "gemini", or any other value defaults to agent-based analysis
+ANALYSIS_MODE = os.getenv("ANALYSIS_MODE", None)
+
 
 def get_product_config(product_name: str):
     """

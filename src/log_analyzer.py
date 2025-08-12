@@ -29,6 +29,8 @@ from src.inference import (
     AgentAnalysisLimitExceededError,
     InferenceAPIUnavailableError,
 )
+from src.gemini_client import analyze_log_with_gemini
+from src.config import ANALYSIS_MODE
 from src.prow_analyzer import analyze_prow_artifacts
 from src.utils import extract_job_details
 
@@ -127,6 +129,16 @@ def run_agent_analysis(error_summary, product, product_config):
         reraise=True,
     )
     def _run_agent_analysis():
+        if ANALYSIS_MODE == "gemini":
+            logger.info("Using Gemini analysis mode")
+            response = analyze_log_with_gemini(product, product_config, error_summary)
+            return response
+        else:
+            logger.info("Using agent-based analysis mode")
+            return _run_fallback_agent_analysis()
+    
+    def _run_fallback_agent_analysis():
+        """Fallback to agent-based analysis if direct Gemini call fails."""
         llm = ChatOpenAI(
             model=product_config["model"]["GENERIC"],
             api_key=product_config["token"]["GENERIC"],
@@ -157,8 +169,9 @@ def run_agent_analysis(error_summary, product, product_config):
 
         query = (
             f"Please analyze this {product} specific error"
-            f" summary: {error_summary} using the appropriate"
-            f" tool and provide me potential next steps to debug"
+            f" summary: {error_summary} using the most appropriate"
+            f" tool (product-specific or generic)"
+            f" and provide me potential next steps to debug"
             f" this issue as a final answer"
         )
 
