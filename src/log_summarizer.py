@@ -151,7 +151,7 @@ def download_prow_logs(url, output_dir="/tmp/"):
     return log_dir
 
 
-def get_logjuicer_extract(directory_path, job_name):
+def get_logjuicer_extract(directory_path, job_name, build_log_repo):
     """Extracts erros using logjuicer using fallback mechanism.
 
     :param directory_path: path of output directory
@@ -159,7 +159,7 @@ def get_logjuicer_extract(directory_path, job_name):
     :return: a list of errors
     """
     file_path = os.path.join(directory_path, f"{job_name}.txt")
-    url = f"https://raw.githubusercontent.com/vishnuchalla/ocp-qe-prow-build-logs/main/{job_name}.txt"
+    url = f"{build_log_repo}{job_name}.txt"
 
     try:
         logger.info("Attempting to download log file from: %s", url)
@@ -209,7 +209,7 @@ def get_logmine_extract(directory_path):
         return full_errors
 
 
-def search_prow_errors(directory_path, job_name):
+def search_prow_errors(directory_path, job_name, build_log_repo):
     """
     Extracts errors by using multiple mechanisms.
 
@@ -217,7 +217,7 @@ def search_prow_errors(directory_path, job_name):
     :param directory_path: job name for the failure
     :return: a list of errors
     """
-    logjuicer_extract = get_logjuicer_extract(directory_path, job_name)
+    logjuicer_extract = get_logjuicer_extract(directory_path, job_name, build_log_repo)
     if logjuicer_extract is None:
         return get_logmine_extract(directory_path)
     return logjuicer_extract

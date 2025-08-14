@@ -156,7 +156,7 @@ class SlackMessageFetcher:
             thread_ts=max_ts,
         )
 
-    def _process_message(self, msg, product, ci_system, product_config, enable_inference):
+    def _process_message(self, msg, product, ci_system, product_config, enable_inference, build_log_repo):
         """Process a single message through the complete pipeline."""
         user = msg.get("user", "Unknown")
         text = msg.get("text", "No text available")
@@ -169,7 +169,7 @@ class SlackMessageFetcher:
             return ts
 
         # Extract and download logs
-        errors_list, categorization_message, requires_llm, is_install_issue = download_and_analyze_logs(text, ci_system)
+        errors_list, categorization_message, requires_llm, is_install_issue = download_and_analyze_logs(text, ci_system, build_log_repo)
         if errors_list is None:
             return ts
 
@@ -209,10 +209,12 @@ class SlackMessageFetcher:
     def fetch_messages(self, **kwargs):
         """Fetches only the latest messages from the Slack channel."""
         try:
+            self.logger.info("kwargs" + str(kwargs))
             product = kwargs["product"]
             ci_system = kwargs["ci"]
             product_config = kwargs["product_config"]
             enable_inference = kwargs["enable_inference"]
+            build_log_repo = kwargs["build_logs"]
 
             params = {"channel": self.channel_id, "limit": 1}
             if self.last_seen_timestamp:
@@ -242,7 +244,7 @@ class SlackMessageFetcher:
                         max_ts = ts
 
                     processed_ts = self._process_message(
-                        msg, product, ci_system, product_config, enable_inference
+                        msg, product, ci_system, product_config, enable_inference, build_log_repo
                     )
 
                     if processed_ts and float(processed_ts) > float(self.last_seen_timestamp or 0):
@@ -310,6 +312,9 @@ if __name__ == "__main__":
         "--ci", type=str, default=os.environ.get("CI"), help="CI system name"
     )
     parser.add_argument(
+        "--build-logs", type=str, default="https://raw.githubusercontent.com/vishnuchalla/ocp-qe-prow-build-logs/main/", help="Build logs for job comparison"
+    )
+    parser.add_argument(
         "--log-level",
         type=str,
         choices=VALID_LOG_LEVELS,
@@ -341,6 +346,7 @@ if __name__ == "__main__":
         "ci": args.ci.upper(),
         "product_config": get_product_config(product_name=args.product.upper()),
         "enable_inference": args.enable_inference,
+        "build_logs": args.build_logs
     }
 
     fetcher = SlackMessageFetcher(

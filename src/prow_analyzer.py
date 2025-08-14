@@ -62,7 +62,7 @@ def scan_orion_xmls(directory_path):
     return []
 
 
-def analyze_prow_artifacts(directory_path, job_name):
+def analyze_prow_artifacts(directory_path, job_name, build_log_repo):
     """
     Analyzes prow artifacts and extracts errors.
 
@@ -114,6 +114,6 @@ def analyze_prow_artifacts(directory_path, job_name):
     if len(cluster_operator_errors) == 0:
         orion_errors = scan_orion_xmls(directory_path)
         if len(orion_errors) == 0:
-            return [matched_line] + [step_summary] + search_prow_errors(directory_path, job_name), categorization_message, True, False
+            return [matched_line] + [step_summary] + search_prow_errors(directory_path, job_name, build_log_repo), categorization_message, True, False
         return [matched_line + "\n"] + orion_errors, categorization_message, False, False
     return [matched_line + "\n"] + cluster_operator_errors, categorization_message, False, False

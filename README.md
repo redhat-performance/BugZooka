@@ -20,7 +20,7 @@ Python 3.11 and above is recommended for the environment setup.
 ```
 python3 slack.py --help
 
-usage: slack.py [-h] [--product PRODUCT] [--ci CI]
+usage: slack.py [-h] [--product PRODUCT] [--ci CI] [--build-logs BUILD_LOGS] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--enable-inference]
 
 Slack Log Analyzer Bot
 
@@ -28,6 +28,11 @@ options:
   -h, --help            show this help message and exit
   --product PRODUCT     Product type (e.g., openshift, ansible)
   --ci CI               CI system name
+  --build-logs BUILD_LOGS
+                        Build logs for job comparison
+  --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                        Logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL). Can also be set via LOG_LEVEL env var
+  --enable-inference    Enable inference mode. Can also be set via ENABLE_INFERENCE env var (true/false).
 ```
 
 ## **Configurables**
