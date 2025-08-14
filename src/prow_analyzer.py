@@ -8,7 +8,7 @@ from src.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
 from src.log_summarizer import search_prow_errors
 from src.utils import categorize_prow_failure
 from src.xmlparser import (
-    summarize_orion_xml, 
+    summarize_orion_xml,
     summarize_junit_operator_xml
 )
 

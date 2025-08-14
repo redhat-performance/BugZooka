@@ -2,7 +2,7 @@ import re
 import logging
 import xmltodict
 from src.utils import (
-    extract_prow_test_phase, 
+    extract_prow_test_phase,
     extract_prow_test_name
 )
 
@@ -25,22 +25,20 @@ def extract_orion_changepoint_context(failure_text):
     Extracts changepoints.
 
     :param failure_text: failures xml text
-    :return: chanepoints string
+    :return: list of changepoint strings
     """
-    lines = failure_text.strip().splitlines()
-    changepoint_idx = -1
-
-    # Find the changepoint
-    for i, line in enumerate(lines):
+    lines = str(failure_text).strip().splitlines()
+    changepoints = []
+    for line in lines:
         if "-- changepoint" in line:
-            changepoint_idx = i
-            break
-
-    if changepoint_idx != -1:
-        parts = lines[changepoint_idx].split("|")
-        return f"{parts[-2].strip()} % changepoint --- {re.sub(r'X+-X+', 'ocp-qe-perfscale', parts[4].strip(), count=1)}"
-    else:
-        return "No changepoint found."
+            parts = line.split("|")
+            try:
+                percentage = parts[-2].strip()
+                url = re.sub(r"X+-X+", "ocp-qe-perfscale", parts[4].strip(), count=1)
+                changepoints.append(f"{percentage} % changepoint --- {url}")
+            except Exception:
+                continue
+    return changepoints
 
 
 def get_failing_test_cases(xml_path):
@@ -71,12 +69,13 @@ def summarize_orion_xml(xml_path):
     :param xml_path: xml file path
     :return: summary of the xml file
     """
+    summaries = []
     for each_case in get_failing_test_cases(xml_path):
         failure_output = each_case["failure"]
-        changepoint_str = extract_orion_changepoint_context(failure_output)
-        if changepoint_str != "No changepoint found.":
-            return f"\n--- Test Case: {each_case['@name']} --- " + changepoint_str
-    return ""
+        changepoint_entries = extract_orion_changepoint_context(failure_output)
+        for entry in changepoint_entries:
+            summaries.append(f"\n--- Test Case: {each_case['@name']} --- {entry}")
+    return "".join(summaries)
 
 
 def summarize_junit_operator_xml(xml_path):
