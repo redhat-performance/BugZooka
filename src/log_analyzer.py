@@ -37,14 +37,14 @@ from src.utils import extract_job_details
 logger = logging.getLogger(__name__)
 
 
-def download_and_analyze_logs(text, ci_system):
+def download_and_analyze_logs(text, ci_system, build_log_repo):
     """Extract job details, download and analyze logs based on CI system."""
     if ci_system == "PROW":
         job_url, job_name = extract_job_details(text)
         if job_url is None or job_name is None:
             return None, None, None
         directory_path = download_prow_logs(job_url)
-        errors_list, categorization_message, requires_llm, is_install_issue = analyze_prow_artifacts(directory_path, job_name)
+        errors_list, categorization_message, requires_llm, is_install_issue = analyze_prow_artifacts(directory_path, job_name, build_log_repo)
     else:
         # Pre-assumes the other ci system is ansible
         url_pattern = r"<([^>]+)>"
