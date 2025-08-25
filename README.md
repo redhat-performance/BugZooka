@@ -1,6 +1,6 @@
 # **BugZooka**
 BugZooka is a tool for log analysis and categorization based on static rules and 3rd party LLM integrations.
-Product specific LLM prompts are configured in [prompts.json](prompts.json), for generic and error summarization prompts see [prompts.py](src/prompts.py). Chat interactions and sessions are not retained.
+Product specific LLM prompts are configured in [prompts.json](prompts.json), for generic and error summarization prompts see [prompts.py](bugzooka/analysis/prompts.py). Chat interactions and sessions are not retained.
 **Gen AI Notice:** users of this tool should not enter any personal information as LLM prompt input and always review generated responses for accuracy and relevance prior to using the information.
 
 #### High-Level Flow Diagram
@@ -8,26 +8,59 @@ Product specific LLM prompts are configured in [prompts.json](prompts.json), for
 
 
 ## **Environment Setup**
-Python 3.11 and above is recommended for the environment setup.
+
+### **Prerequisites**
+- Python 3.11 or higher
+- pip (Python package manager)
+
+### **Installation**
+
+```bash
+git clone <repository_url>
+cd BugZooka
+python -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+make install
 ```
->> git clone <repository_url>
->> python3 -m venv venv
->> source venv/bin/activate
->> pip install -r requirements.txt
+
+### **Development Setup**
+After cloning and setting up the virtual environment:
+
+```bash
+# Install dependencies + development tools
+make dev-install
+
+# Set up pre-commit hooks (optional)
+pre-commit install
+
+# Run tests
+make test
+
+# Run linting and formatting
+make lint
+make format
 ```
 
 ## **Usage**
-```
-python3 slack.py --help
 
-usage: slack.py [-h] [--product PRODUCT] [--ci CI]
+### **Slack Log Analyzer Bot**
+```bash
+# Run via Makefile
+make run ARGS="--help"
 
-Slack Log Analyzer Bot
+usage: entrypoint.py [-h] [--product PRODUCT] [--ci CI] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--enable-inference]
+
+BugZooka - Slack Log Analyzer Bot
 
 options:
   -h, --help            show this help message and exit
   --product PRODUCT     Product type (e.g., openshift, ansible)
   --ci CI               CI system name
+  --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                        Logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL). Can also be set via LOG_LEVEL env var
+  --enable-inference    Enable inference mode. Can also be set via ENABLE_INFERENCE env var (true/false).
 ```
 
 ## **Configurables**
@@ -77,19 +110,59 @@ Along with secrets, prompts are configurable using a `prompts.json` in the root 
 }
 ```
 
-## **Execution Examples**
-### Using CLI
-```
-python3 slack.py --ci prow --product openshift
-```
-### Containerised version
-```
-// Build Image
-podman build -f Dockerfile -t=quay.io/YOUR_REPO/bugzooka:latest .
+### **Containerized Deployment**
+```bash
+# Build image using Podman
+podman build -f Dockerfile -t quay.io/YOUR_REPO/bugzooka:latest .
 
-// Push to registry
+# Push to registry
 podman push quay.io/YOUR_REPO/bugzooka:latest
 
-// Run as a container
-podman run -d   -e PRODUCT=openshift   -e CI=prow   -v /path-to/prompts.json:/app/prompts.json:Z   -v /path-to/.env:/app/.env:Z  quay.io/YOUR_REPO/bugzooka:latest
+# Run as a container
+podman run -d \
+  -e PRODUCT=openshift \
+  -e CI=prow \
+  -e ENABLE_INFERENCE=true \
+  -v /path-to/prompts.json:/app/prompts.json:Z \
+  -v /path-to/.env:/app/.env:Z \
+  quay.io/YOUR_REPO/bugzooka:latest
+
+# Alternatively use Make commands
+make podman-build
+make podman-run  # Requires .env file in project root
 ```
+
+## **Development**
+
+### **Project Structure**
+```
+bugzooka/
+├── __init__.py
+├── entrypoint.py              # Main orchestrator
+├── core/                      # Core application functionality
+│   ├── __init__.py
+│   ├── config.py             # Configuration management
+│   ├── constants.py          # Application constants
+│   └── utils.py              # Shared utility functions
+├── integrations/              # External service integrations
+│   ├── __init__.py
+│   ├── slack_fetcher.py      # Slack integration
+│   ├── gemini_client.py      # Gemini API client
+│   └── inference.py          # Generic inference API
+└── analysis/                  # Log analysis and processing
+    ├── __init__.py
+    ├── log_analyzer.py       # Main log analysis orchestration
+    ├── log_summarizer.py     # Log summarization functionality
+    ├── prow_analyzer.py      # Prow-specific CI/CD analysis
+    ├── xmlparser.py          # XML parsing for test results
+    └── prompts.py            # AI prompts and templates
+```
+
+### **Code Quality**
+This project uses the following tooling for code quality:
+
+- **Black**: Code formatting
+- **Ruff**: Fast Python linter (replaces flake8, isort, etc.)
+- **MyPy**: Static type checking
+- **Pre-commit**: Git hooks for code quality (optional)
+- **Pytest**: Testing framework

@@ -86,4 +86,4 @@ ENV PATH="/usr/lib/google-cloud-sdk/bin:/app-packages/bin:$PATH"
 USER appuser
 
 # Default command
-CMD ["python3", "slack.py"]
+CMD ["python3", "bugzooka/entrypoint.py"]

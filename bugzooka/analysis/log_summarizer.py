@@ -5,9 +5,9 @@ import subprocess
 from collections import deque
 import requests
 
-from src.constants import MAX_CONTEXT_SIZE
-from src.prompts import ERROR_SUMMARIZATION_PROMPT
-from src.utils import (
+from bugzooka.core.constants import MAX_CONTEXT_SIZE
+from bugzooka.analysis.prompts import ERROR_SUMMARIZATION_PROMPT
+from bugzooka.core.utils import (
     download_file_from_gcs,
     filter_most_frequent_errors,
     list_gcs_files,

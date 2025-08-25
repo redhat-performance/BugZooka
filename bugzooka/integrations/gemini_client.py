@@ -4,11 +4,11 @@ import ssl
 import httpx
 
 from openai import OpenAI
-from src.constants import (
+from bugzooka.core.constants import (
     INFERENCE_MAX_TOKENS,
     INFERENCE_TEMPERATURE,
 )
-from src.inference import InferenceAPIUnavailableError
+from bugzooka.integrations.inference import InferenceAPIUnavailableError
 
 
 logger = logging.getLogger(__name__)
@@ -130,4 +130,6 @@ def analyze_log_with_gemini(
 
     except Exception as e:
         logger.error("Error analyzing %s log with Gemini: %s", product, e.__cause__)
-        raise InferenceAPIUnavailableError(f"Error analyzing {product} log with Gemini: {str(e)}") from e
+        raise InferenceAPIUnavailableError(
+            f"Error analyzing {product} log with Gemini: {str(e)}"
+        ) from e

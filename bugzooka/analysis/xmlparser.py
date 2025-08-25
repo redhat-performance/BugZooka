@@ -1,10 +1,8 @@
 import re
 import logging
 import xmltodict
-from src.utils import (
-    extract_prow_test_phase,
-    extract_prow_test_name
-)
+
+from bugzooka.core.utils import extract_prow_test_phase, extract_prow_test_name
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 import logging
 import re
 import subprocess
-from src.constants import TOP_N_ERRROS
+from bugzooka.core.constants import TOP_N_ERRROS
 
 logger = logging.getLogger(__name__)
 
@@ -50,56 +50,6 @@ def list_gcs_files(gcs_path):
     return run_shell_command(command)
 
 
-def extract_prow_test_phase(case_name):
-    """
-    Identifies the prow test phase.
-
-    :param case_name: name of the case
-    :return: phase
-    """
-    for keyword in ("pre", "post", "test"):
-        if f"{keyword} phase" in case_name:
-            return keyword
-    return None
-
-
-def categorize_prow_failure(step_name, step_phase):
-    """
-    Categorize prow failures.
-
-    :param step_name: step name
-    :param step_phase: step phase
-    :return: categorized preview tag message
-    """
-    failure_map = {
-        "provision": "provision failure",
-        "deprovision": "deprovision failure",
-        "gather": "must gather failure",
-        "orion": "change point detection failure",
-        "cerberus": "cerberus health check failure",
-        "node-readiness": "nodes readiness check failure",
-        "openshift-qe": "workload failure",
-        "upgrade": "upgrade failure"
-    }
-
-    for keyword, description in failure_map.items():
-        if keyword in step_name:
-            return f"{step_phase} phase: {description}"
-
-    return f"{step_phase} phase: {step_name} step failure"
-
-
-def extract_prow_test_name(case_name):
-    """
-    Extracts prow test name from a given string.
-
-    :param case_name: name of the case
-    :return: name of the test
-    """
-    match = re.search(r'(?<=-\s)(.+?)(?=\s+container)', case_name)
-    return match.group(1) if match else None
-
-
 def download_file_from_gcs(gcs_url, local_path):
     """
     Download a single file from GCS.
@@ -116,6 +66,30 @@ def download_file_from_gcs(gcs_url, local_path):
         logger.info("%s downloaded successfully.", file_name)
     except subprocess.CalledProcessError as e:
         logger.error("Error downloading %s: %s", file_name, e)
+
+
+def extract_prow_test_phase(case_name):
+    """
+    Identifies the prow test phase.
+
+    :param case_name: name of the case
+    :return: phase
+    """
+    for keyword in ("pre", "post", "test"):
+        if f"{keyword} phase" in case_name:
+            return keyword
+    return None
+
+
+def extract_prow_test_name(case_name):
+    """
+    Extracts prow test name from a given string.
+
+    :param case_name: name of the case
+    :return: name of the test
+    """
+    match = re.search(r"(?<=-\s)(.+?)(?=\s+container)", case_name)
+    return match.group(1) if match else None
 
 
 def filter_most_frequent_errors(full_errors, frequent_errors):
@@ -156,33 +130,6 @@ def filter_most_frequent_errors(full_errors, frequent_errors):
     return top_errors_from_full
 
 
-def get_slack_message_blocks(markdown_header, content_text, use_markdown=False):
-    """
-    Prepares a slack message building blocks
-
-    :param markdown_header: markdown header to be displayed
-    :param content_text: text message content (preformatted or markdown)
-    :param use_markdown: if True, render content as markdown; if False, use preformatted text
-    :return: a sanitized version of text blocks
-    """
-    header_block = {"type": "section", "text": {"type": "mrkdwn", "text": markdown_header}}
-    
-    if use_markdown:
-        content_block = {
-            "type": "markdown",
-            "text": content_text.strip(),
-        }
-    else:
-        content_block = {
-            "type": "rich_text",
-            "block_id": "error_logs_block",
-            "elements": [
-                {
-                    "type": "rich_text_preformatted",
-                    "elements": [{"type": "text", "text": content_text.strip()}],
-                    "border": 0,
-                }
-            ],
-        }
-    
-    return [header_block, content_block]
+def str_to_bool(value):
+    """Convert string to bool."""
+    return str(value).lower() == "true"

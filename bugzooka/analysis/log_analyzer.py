@@ -11,28 +11,28 @@ from tenacity import (
     retry_if_exception_type,
 )
 
-from src.constants import (
+from bugzooka.core.constants import (
     MAX_CONTEXT_SIZE,
     MAX_AGENTIC_ITERATIONS,
 )
-from src.prompts import ERROR_FILTER_PROMPT
-from src.log_summarizer import (
+from bugzooka.analysis.prompts import ERROR_FILTER_PROMPT
+from bugzooka.analysis.log_summarizer import (
     download_prow_logs,
     search_errors_in_file,
     generate_prompt,
     download_url_to_log,
 )
-from src.inference import (
+from bugzooka.integrations.inference import (
     ask_inference_api,
     analyze_product_log,
     analyze_generic_log,
     AgentAnalysisLimitExceededError,
     InferenceAPIUnavailableError,
 )
-from src.gemini_client import analyze_log_with_gemini
-from src.config import ANALYSIS_MODE
-from src.prow_analyzer import analyze_prow_artifacts
-from src.utils import extract_job_details
+from bugzooka.integrations.gemini_client import analyze_log_with_gemini
+from bugzooka.core.config import ANALYSIS_MODE
+from bugzooka.analysis.prow_analyzer import analyze_prow_artifacts
+from bugzooka.core.utils import extract_job_details
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,9 @@ def download_and_analyze_logs(text, ci_system):
         if job_url is None or job_name is None:
             return None, None, None
         directory_path = download_prow_logs(job_url)
-        errors_list, categorization_message, requires_llm, is_install_issue = analyze_prow_artifacts(directory_path, job_name)
+        errors_list, categorization_message, requires_llm, is_install_issue = (
+            analyze_prow_artifacts(directory_path, job_name)
+        )
     else:
         # Pre-assumes the other ci system is ansible
         url_pattern = r"<([^>]+)>"
@@ -136,7 +138,7 @@ def run_agent_analysis(error_summary, product, product_config):
         else:
             logger.info("Using agent-based analysis mode")
             return _run_fallback_agent_analysis()
-    
+
     def _run_fallback_agent_analysis():
         """Fallback to agent-based analysis if direct Gemini call fails."""
         llm = ChatOpenAI(

@@ -1,7 +1,7 @@
 import logging
 
 import requests
-from src.constants import (
+from bugzooka.core.constants import (
     GENERIC,
     INFERENCE_TOP_P,
     INFERENCE_FREQUENCY_PENALTY,

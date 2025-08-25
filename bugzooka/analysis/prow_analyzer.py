@@ -4,12 +4,11 @@ import os
 import re
 from collections import deque
 from pathlib import Path
-from src.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
-from src.log_summarizer import search_prow_errors
-from src.utils import categorize_prow_failure
-from src.xmlparser import (
+from bugzooka.core.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
+from bugzooka.analysis.log_summarizer import search_prow_errors
+from bugzooka.analysis.xmlparser import (
     summarize_orion_xml,
-    summarize_junit_operator_xml
+    summarize_junit_operator_xml,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +61,32 @@ def scan_orion_xmls(directory_path):
     return []
 
 
+def categorize_prow_failure(step_name, step_phase):
+    """
+    Categorize prow failures.
+
+    :param step_name: step name
+    :param step_phase: step phase
+    :return: categorized preview tag message
+    """
+    failure_map = {
+        "provision": "provision failure",
+        "deprovision": "deprovision failure",
+        "gather": "must gather failure",
+        "orion": "change point detection failure",
+        "cerberus": "cerberus health check failure",
+        "node-readiness": "nodes readiness check failure",
+        "openshift-qe": "workload failure",
+        "upgrade": "upgrade failure",
+    }
+
+    for keyword, description in failure_map.items():
+        if keyword in step_name:
+            return f"{step_phase} phase: {description}"
+
+    return f"{step_phase} phase: {step_name} step failure"
+
+
 def analyze_prow_artifacts(directory_path, job_name):
     """
     Analyzes prow artifacts and extracts errors.
@@ -73,12 +98,17 @@ def analyze_prow_artifacts(directory_path, job_name):
     step_summary = ""
     categorization_message = ""
     pattern = re.compile(r"Logs for container test in pod .*")
-    timestamp_strip = re.compile(r"^\x1b\[[0-9;]*m\w*\x1b\[0m\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]\s*")
+    timestamp_strip = re.compile(
+        r"^\x1b\[[0-9;]*m\w*\x1b\[0m\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]\s*"
+    )
     build_file_path = os.path.join(directory_path, "build-log.txt")
     if not os.path.isfile(build_file_path):
-        return [
-            "Prow maintanence issues, couldn't even find the build-log.txt file"
-        ], MAINTENANCE_ISSUE, False, True
+        return (
+            ["Prow maintanence issues, couldn't even find the build-log.txt file"],
+            MAINTENANCE_ISSUE,
+            False,
+            True,
+        )
     with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
         matched_line = next(
             (
@@ -86,7 +116,7 @@ def analyze_prow_artifacts(directory_path, job_name):
                 for line in f
                 if pattern.search(timestamp_strip.sub("", line))
             ),
-            None
+            None,
         )
         if matched_line is None:
             matched_line = (
@@ -95,7 +125,9 @@ def analyze_prow_artifacts(directory_path, job_name):
             return [matched_line], MAINTENANCE_ISSUE, False, True
     junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
     if os.path.isfile(junit_operator_file_path):
-        step_phase, step_name, step_summary = summarize_junit_operator_xml(junit_operator_file_path)
+        step_phase, step_name, step_summary = summarize_junit_operator_xml(
+            junit_operator_file_path
+        )
         if step_name and step_phase:
             categorization_message = categorize_prow_failure(step_name, step_phase)
         else:
@@ -105,15 +137,37 @@ def analyze_prow_artifacts(directory_path, job_name):
     if not os.path.isfile(cluster_operators_file_path):
         with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
             build_log_content = list(deque(f, maxlen=BUILD_LOG_TAIL))
-        return [
-            "\n Somehow couldn't find clusteroperators.json file",
-            matched_line + "\n",
-            step_summary + "\n".join(build_log_content),
-        ], categorization_message, False, False
+        return (
+            [
+                "\n Somehow couldn't find clusteroperators.json file",
+                matched_line + "\n",
+                step_summary + "\n".join(build_log_content),
+            ],
+            categorization_message,
+            False,
+            False,
+        )
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
         orion_errors = scan_orion_xmls(directory_path)
         if len(orion_errors) == 0:
-            return [matched_line] + [step_summary] + search_prow_errors(directory_path, job_name), categorization_message, True, False
-        return [matched_line + "\n"] + orion_errors, categorization_message, False, False
-    return [matched_line + "\n"] + cluster_operator_errors, categorization_message, False, False
+            return (
+                [matched_line]
+                + [step_summary]
+                + search_prow_errors(directory_path, job_name),
+                categorization_message,
+                True,
+                False,
+            )
+        return (
+            [matched_line + "\n"] + orion_errors,
+            categorization_message,
+            False,
+            False,
+        )
+    return (
+        [matched_line + "\n"] + cluster_operator_errors,
+        categorization_message,
+        False,
+        False,
+    )
