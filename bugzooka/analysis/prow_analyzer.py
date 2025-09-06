@@ -7,10 +7,8 @@ from pathlib import Path
 from bugzooka.core.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
 from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.analysis.log_summarizer import search_prow_errors
-from bugzooka.analysis.xmlparser import (
-    summarize_orion_xml,
-    summarize_junit_operator_xml,
-)
+from bugzooka.analysis.xmlparser import summarize_junit_operator_xml
+from bugzooka.analysis.jsonparser import summarize_orion_json
 
 logger = logging.getLogger(__name__)
 
@@ -46,26 +44,19 @@ def get_cluster_operator_errors(directory_path):
         return []
 
 
-def scan_orion_xmls(directory_path):
+def scan_orion_jsons(directory_path):
     """
-    Extracts errors from orion xmls.
+    Extracts errors from orion jsons.
 
     :param directory_path: directory path for the artifacts
     :return: list of errors
     """
     base_dir = Path(f"{directory_path}/orion")
-    xml_files = base_dir.glob("*.xml")
-    for xml_file in xml_files:
-        try:
-            xml_content = summarize_orion_xml(xml_file)
-        except ImportError as e:
-            logger.warning("Orion XML parsing unavailable: %s", e)
-            return []
-        except Exception as e:
-            logger.warning("Failed to summarize Orion XML '%s': %s", xml_file, e)
-            continue
-        if xml_content != "":
-            return [xml_content]
+    json_files = base_dir.glob("*.json")
+    for json_file in json_files:
+        json_content = summarize_orion_json(json_file)
+        if json_content != "":
+            return [json_content]
     return []
 
 
@@ -159,7 +150,7 @@ def analyze_prow_artifacts(directory_path, job_name):
         )
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
-        orion_errors = scan_orion_xmls(directory_path)
+        orion_errors = scan_orion_jsons(directory_path)
         if len(orion_errors) == 0:
             return (
                 [matched_line]

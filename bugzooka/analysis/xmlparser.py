@@ -1,4 +1,3 @@
-import re
 import logging
 
 try:
@@ -26,27 +25,6 @@ def load_xml_as_dict(xml_path):
         return xmltodict.parse(f.read())
 
 
-def extract_orion_changepoint_context(failure_text):
-    """
-    Extracts changepoints.
-
-    :param failure_text: failures xml text
-    :return: list of changepoint strings
-    """
-    lines = str(failure_text).strip().splitlines()
-    changepoints = []
-    for line in lines:
-        if "-- changepoint" in line:
-            parts = line.split("|")
-            try:
-                percentage = parts[-2].strip()
-                url = re.sub(r"X+-X+", "ocp-qe-perfscale", parts[4].strip(), count=1)
-                changepoints.append(f"{percentage} % changepoint --- {url}")
-            except Exception:
-                continue
-    return changepoints
-
-
 def get_failing_test_cases(xml_path):
     """
     Yield each failing test case from a given XML path.
@@ -66,22 +44,6 @@ def get_failing_test_cases(xml_path):
         for each_case in ts["testcase"]:
             if "failure" in each_case:
                 yield each_case
-
-
-def summarize_orion_xml(xml_path):
-    """
-    Summarize a given xml file.
-
-    :param xml_path: xml file path
-    :return: summary of the xml file
-    """
-    summaries = []
-    for each_case in get_failing_test_cases(xml_path):
-        failure_output = each_case["failure"]
-        changepoint_entries = extract_orion_changepoint_context(failure_output)
-        for entry in changepoint_entries:
-            summaries.append(f"\n--- Test Case: {each_case['@name']} --- {entry}")
-    return "".join(summaries)
 
 
 def summarize_junit_operator_xml(xml_path):
