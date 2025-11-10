@@ -11,6 +11,8 @@ resources:
   - configmap-prompts.yaml
   - configmap-mcp-config.yaml
   - deployment.yaml
+  - deployment-jira-mcp.yaml
+  - service-jira-mcp.yaml
 
 generatorOptions:
   disableNameSuffixHash: true

@@ -110,7 +110,7 @@ For each config:
 - No emojis in tables
 - Separate each config section with 80 equals signs.
 
-**Remember:** 
+**Remember:**
 - The tools provide percentage changes - use them as provided
 - CHECK thresholds (5% and 10%) before categorizing
 - SORT by absolute percentage change (highest first) - this is mandatory
@@ -126,4 +126,13 @@ For each config:
 
 Beginning analysis now.
 """,
+}
+# Jira tool prompt - used when Jira MCP tools are available
+JIRA_TOOL_PROMPT = {
+    "system": (
+        "\n\nIMPORTANT: You have access to JIRA search tools. After analyzing the error, "
+        "ALWAYS search for related issues in JIRA using the search_jira_issues tool with the OCPBUGS project. "
+        "Extract key error terms, component names, or operators from the log summary to search for similar issues. "
+        "Include the top 3 most relevant JIRA issues in your final response under a 'Related JIRA Issues' section."
+    ),
 }
