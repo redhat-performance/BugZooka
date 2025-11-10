@@ -45,6 +45,8 @@ spec:
           envFrom:
             - secretRef:
                 name: bugzooka-env
+            - secretRef:
+                name: bugzooka-jira
           volumeMounts:
             - name: prompts
               mountPath: /app/prompts.json
