@@ -28,10 +28,12 @@ class JiraClient:
     def search_issues(
         self, project_key: str, search_text: str, max_results: int = 10
     ) -> List[dict]:
-        """Search for issues in a project by title or description."""
+        """Search for issues in a project by title or description.
+        Only returns open/in-progress issues, ordered by most recently updated."""
         jql = (
             f'project = "{project_key}" AND '
-            f'(summary ~ "{search_text}" OR description ~ "{search_text}") '
+            f'(summary ~ "{search_text}" OR description ~ "{search_text}") AND '
+            f'status NOT IN (Closed, Resolved, Done, "Won\'t Do", "Won\'t Fix", Obsolete) '
             "ORDER BY updated DESC"
         )
 
@@ -157,7 +159,10 @@ def get_allowed_projects() -> List[str]:
     Raises:
         ValueError: If no valid projects are configured
     """
-    projects_env = os.environ.get("JIRA_ALLOWED_PROJECTS", "OCPBUGS")
+    projects_env = os.environ.get("JIRA_ALLOWED_PROJECTS")
+    if not projects_env:
+        raise ValueError("JIRA_ALLOWED_PROJECTS environment variable is not set")
+
     allowed = [p.strip() for p in projects_env.split(",") if p.strip()]
 
     logger.debug(f"Allowed Jira projects: {allowed}")
@@ -178,8 +183,7 @@ def get_jira_client() -> JiraClient:
 
     if not base_url or not token:
         raise ValueError(
-            "Missing Jira credentials: JIRA_BASE_URL and JIRA_TOKEN "
-            "must be set in environment"
+            "Missing Jira credentials: JIRA_BASE_URL and JIRA_TOKEN must be set in environment"
         )
 
     return JiraClient(base_url, token)
@@ -189,9 +193,10 @@ def get_jira_client() -> JiraClient:
 def search_jira_issues(
     project_key: str, search_text: str, max_results: int = 10
 ) -> str:
-    """Search for Jira issues in a project by title or description.
+    """Search for open Jira issues in a project by title or description.
     Use this tool to find related bugs or known issues that match the error patterns.
-    Call list_jira_projects() first if you're unsure which projects are available.
+    Only returns open/in-progress issues (excludes Closed, Resolved, Done, Won't Do/Fix, Obsolete).
+    Results are ordered by most recently updated first.
     Args:
         project_key: The Jira project key to search in
             (must be one of the configured allowed projects)
@@ -199,7 +204,7 @@ def search_jira_issues(
             (e.g., "etcd degraded", "CrashLoopBackOff", component names)
         max_results: Maximum number of results to return (default: 10)
     Returns:
-        JSON string containing matching issues with their details
+        JSON string containing matching open issues with their details, ordered by recency
     """
     # Validate project key against allowed projects
     allowed_projects = get_allowed_projects()
@@ -282,78 +287,6 @@ def get_jira_issue(issue_key: str) -> str:
     except Exception as e:
         logger.error(f"Error in get_jira_issue: {e}")
         return f"Error getting Jira issue: {str(e)}"
-
-
-@mcp.tool()
-def list_jira_projects() -> str:
-    """List the Jira projects that are allowed/configured for searching.
-    Use this tool first if you need to know which project keys are available
-    before calling search_jira_issues. The list is configured via the
-    JIRA_ALLOWED_PROJECTS environment variable.
-    Returns:
-        Formatted list of allowed project keys and their details
-    """
-    try:
-        # Get allowed projects from environment first
-        allowed_projects = get_allowed_projects()
-
-        # Return allowed projects list as a minimum
-        base_result = (
-            f"Allowed Jira project keys for search: "
-            f"{', '.join(allowed_projects)}\n\n"
-        )
-
-        # Try to fetch additional details from Jira API
-        try:
-            client = get_jira_client()
-            response = requests.get(
-                f"{client.base_url}/rest/api/2/project",
-                headers=client.headers,
-                timeout=30,
-            )
-            response.raise_for_status()
-
-            projects = response.json()
-            project_list = []
-
-            # Filter to only include allowed projects
-            for project in projects:
-                project_key = project.get("key")
-                if project_key in allowed_projects:
-                    project_list.append(
-                        {
-                            "key": project_key,
-                            "name": project.get("name"),
-                            "id": project.get("id"),
-                        }
-                    )
-
-            # Format with full details
-            if project_list:
-                formatted_result = base_result
-                formatted_result += "Project Details:\n\n"
-                for i, project in enumerate(project_list, 1):
-                    formatted_result += (
-                        f"{i}. **{project['key']}** - {project['name']}\n"
-                    )
-                    formatted_result += f"   - ID: {project['id']}\n\n"
-                return formatted_result
-            else:
-                return base_result + (
-                    "Note: Could not fetch additional project details from Jira API."
-                )
-
-        except Exception as api_error:
-            logger.warning(f"Could not fetch project details: {api_error}")
-            # Still return allowed projects list
-            return base_result + (
-                "Note: Could not fetch additional details from Jira API, "
-                "but you can use any of the allowed project keys above."
-            )
-
-    except Exception as e:
-        logger.error(f"Error in list_jira_projects: {e}")
-        return f"Error: {str(e)}"
 
 
 if __name__ == "__main__":

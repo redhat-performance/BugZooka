@@ -125,11 +125,6 @@ GENERIC_INFERENCE_TOKEN="YOUR_INFERENCE_TOKEN"
 GENERIC_MODEL="YOUR_INFERENCE_MODEL"
 ```
 
-# Jira fields
-JIRA_BASE_URL="YOUR_JIRA_URL"
-JIRA_TOKEN="YOUR_JIRA_TOKEN"
-JIRA_ALLOWED_PROJECTS="YOUR_JIRA_PROJECT"
-
 **Note**: Please make sure to provide details for all the mandatory attributes and for the product that is intended to be used for testing along with fallback (i.e. GENERIC details) to handle failover use-cases.
 
 
@@ -269,6 +264,11 @@ make podman-run  # Requires .env file in project root
 export QUAY_CRED='<base64 encoded pull secret>'
 export BUGZOOKA_IMAGE='<image tag>'
 export BUGZOOKA_NAMESPACE='<your namespace>'
+# optional Jira fields
+export JIRA_BASE_URL="YOUR_JIRA_URL"
+export JIRA_TOKEN="YOUR_JIRA_TOKEN"
+export JIRA_ALLOWED_PROJECTS="YOUR_JIRA_PROJECT"
+
 kustomize build ./kustomize | envsubst | oc apply -f -
 
 # Cleanup resources
