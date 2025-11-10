@@ -51,6 +51,9 @@ spec:
             - name: prompts
               mountPath: /app/prompts.json
               subPath: prompts.json
+            - name: mcp-config
+              mountPath: /app/mcp_config.json
+              subPath: mcp_config.json
           resources:
             requests:
               cpu: "1"
@@ -65,3 +68,9 @@ spec:
             items:
               - key: prompts.json
                 path: prompts.json
+        - name: mcp-config
+          configMap:
+            name: bugzooka-mcp-config
+            items:
+              - key: mcp_config.json
+                path: mcp_config.json
