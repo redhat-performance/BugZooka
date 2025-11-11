@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bugzooka-mcp-config
+  namespace: ${BUGZOOKA_NAMESPACE}
+  labels:
+    app: ${BUGZOOKA_NAMESPACE}
+data:
+  mcp_config.json: |
+    {
+      "mcp_servers": {
+        "jira_mcp_server": {
+          "command": "python3",
+          "args": [
+            "-m",
+            "bugzooka.integrations.jira_client"
+          ],
+          "env": {
+            "PYTHONPATH": "/app-packages",
+            "JIRA_BASE_URL": "${JIRA_BASE_URL}",
+            "JIRA_TOKEN": "${JIRA_TOKEN}",
+            "JIRA_ALLOWED_PROJECTS": "${JIRA_ALLOWED_PROJECTS}"
+          },
+          "transport": "stdio"
+        }
+      }
+    }

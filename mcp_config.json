@@ -13,20 +13,16 @@
       "transport": "stdio"
     },
     "jira_mcp_server": {
-      "command": "docker",
+      "command": "python3",
       "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e", "JIRA_URL",
-        "-e", "JIRA_USERNAME",
-        "-e", "JIRA_API_TOKEN",
-        "ghcr.io/sooperset/mcp-atlassian:latest"
+        "-m",
+        "bugzooka.integrations.jira_client"
       ],
       "env": {
-        "JIRA_URL": "<YOUR_ORG_JIRA_URL>",
-        "JIRA_USERNAME": "<YOUR_COMPANY_EMAIL>",
-        "JIRA_API_TOKEN": "<YOUR_JIRA_API_TOKEN>"
+        "PYTHONPATH": "/app-packages",
+        "JIRA_BASE_URL": "<YOUR_JIRA_BASE_URL>",
+        "JIRA_TOKEN": "<YOUR_JIRA_TOKEN>",
+        "JIRA_ALLOWED_PROJECTS": "<YOUR_JIRA_ALLOWED_PROJECTS>"
       },
       "transport": "stdio"
     }

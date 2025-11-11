@@ -6,9 +6,11 @@ namespace: ${BUGZOOKA_NAMESPACE}
 resources:
   - namespace.yaml
   - secret-quay.yaml
+  - secret-jira.yaml
   - serviceaccount-patch.yaml
   - imagestream.yaml
   - configmap-prompts.yaml
+  - configmap-mcp.yaml
   - deploymentconfig.yaml
 
 generatorOptions:
