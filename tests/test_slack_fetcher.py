@@ -18,6 +18,7 @@ def run_slack_fetcher_test(
     test_messages,
     enable_inference,
     mock_slack_post_message,
+    mock_slack_file_upload,
     mock_slack_conversations_history,
     inference_unavailable=False,
 ):
@@ -28,6 +29,7 @@ def run_slack_fetcher_test(
         test_messages (list): Test messages to process
         enable_inference (bool): Whether to enable inference mode
         mock_slack_post_message: Mock function for Slack message posting
+        mock_slack_file_upload: Mock function for Slack file uploads
         mock_slack_conversations_history: Mock function for Slack message history
         inference_unavailable (bool): If True, mock inference functions to raise InferenceAPIUnavailableError
 
@@ -37,12 +39,22 @@ def run_slack_fetcher_test(
     posted_messages = []
 
     mock_post_message = mock_slack_post_message(posted_messages)
+    mock_file_upload = mock_slack_file_upload(posted_messages)
     mock_conversations_history = mock_slack_conversations_history(test_messages)
 
-    with patch("bugzooka.integrations.slack_fetcher.WebClient") as mock_web_client:
+    with patch("bugzooka.integrations.slack_client_base.WebClient") as mock_web_client:
         mock_client_instance = MagicMock()
         mock_client_instance.conversations_history = mock_conversations_history
         mock_client_instance.chat_postMessage = mock_post_message
+        mock_client_instance.files_upload_v2 = mock_file_upload
+        # Mock conversations_replies to indicate bot hasn't replied yet
+        mock_client_instance.conversations_replies = MagicMock(
+            return_value={"ok": True, "messages": [{"user": "U12345"}]}
+        )
+        # Mock chat_getPermalink for job history links
+        mock_client_instance.chat_getPermalink = MagicMock(
+            return_value={"ok": True, "permalink": "https://example.slack.com/archives/C123/p1234567890"}
+        )
         mock_web_client.return_value = mock_client_instance
 
         if inference_unavailable:
@@ -89,7 +101,7 @@ def run_slack_fetcher_test(
 
 class TestSlackFetcher:
     def test_error_processing_inference_enabled(
-        self, mock_slack_post_message, mock_slack_conversations_history
+        self, mock_slack_post_message, mock_slack_file_upload, mock_slack_conversations_history
     ):
         """Test processing error messages with inference enabled."""
         test_messages = create_test_messages(include_error=True, include_success=False)
@@ -98,13 +110,14 @@ class TestSlackFetcher:
             test_messages=test_messages,
             enable_inference=True,
             mock_slack_post_message=mock_slack_post_message,
+            mock_slack_file_upload=mock_slack_file_upload,
             mock_slack_conversations_history=mock_slack_conversations_history,
         )
 
         verify_slack_messages(posted_messages)
 
     def test_error_processing_inference_disabled(
-        self, mock_slack_post_message, mock_slack_conversations_history
+        self, mock_slack_post_message, mock_slack_file_upload, mock_slack_conversations_history
     ):
         """Test processing error messages with inference disabled still provides rule based analysis."""
         test_messages = create_test_messages(include_error=True, include_success=False)
@@ -113,13 +126,14 @@ class TestSlackFetcher:
             test_messages=test_messages,
             enable_inference=False,
             mock_slack_post_message=mock_slack_post_message,
+            mock_slack_file_upload=mock_slack_file_upload,
             mock_slack_conversations_history=mock_slack_conversations_history,
         )
 
         verify_slack_messages(posted_messages, inference_enabled=False)
 
     def test_error_processing_inference_enabled_but_unavailable(
-        self, mock_slack_post_message, mock_slack_conversations_history
+        self, mock_slack_post_message, mock_slack_file_upload, mock_slack_conversations_history
     ):
         """Test processing error messages with inference enabled but inference API unavailable."""
         test_messages = create_test_messages(include_error=True, include_success=False)
@@ -128,6 +142,7 @@ class TestSlackFetcher:
             test_messages=test_messages,
             enable_inference=True,
             mock_slack_post_message=mock_slack_post_message,
+            mock_slack_file_upload=mock_slack_file_upload,
             mock_slack_conversations_history=mock_slack_conversations_history,
             inference_unavailable=True,
         )
@@ -135,7 +150,7 @@ class TestSlackFetcher:
         verify_slack_messages(posted_messages, inference_available=False)
 
     def test_success_processing(
-        self, mock_slack_post_message, mock_slack_conversations_history
+        self, mock_slack_post_message, mock_slack_file_upload, mock_slack_conversations_history
     ):
         """Test processing success messages, should not post anything to Slack."""
         test_messages = create_test_messages(include_error=False, include_success=True)
@@ -144,6 +159,7 @@ class TestSlackFetcher:
             test_messages=test_messages,
             enable_inference=False,
             mock_slack_post_message=mock_slack_post_message,
+            mock_slack_file_upload=mock_slack_file_upload,
             mock_slack_conversations_history=mock_slack_conversations_history,
         )
 

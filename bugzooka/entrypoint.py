@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import signal
 import sys
 
 from bugzooka.core.config import (
@@ -76,6 +77,8 @@ def main() -> None:
         channel_id=SLACK_CHANNEL_ID, logger=logger, poll_interval=SLACK_POLL_INTERVAL
     )
 
+    listener = None
+    
     # If socket mode is enabled, start it in a separate thread
     if args.enable_socket_mode:
         import threading
@@ -92,6 +95,16 @@ def main() -> None:
         )
         socket_thread.start()
         logger.info("Socket Mode listener started in a background thread")
+
+    # Set up signal handler to shutdown both fetcher and listener
+    def shutdown_handler(signum, frame):
+        logger.info("Received shutdown signal")
+        if listener:
+            listener.shutdown(signum, frame)
+        fetcher.shutdown(signum, frame)
+    
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
 
     # Run polling mode in main thread
     fetcher.run(**kwargs)

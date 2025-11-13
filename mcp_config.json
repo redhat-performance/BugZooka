@@ -1,34 +1,8 @@
 {
   "mcp_servers": {
-    "github_analysis_tools": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=<YOUR_PERSONAL_ACCESS_TOKEN>",
-        "-e", "GITHUB_TOOLSETS=repos,issues,pull_requests,actions,code_security,experiments",
-        "ghcr.io/github/github-mcp-server"
-      ],
-      "transport": "stdio"
-    },
-    "jira_mcp_server": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e", "JIRA_URL",
-        "-e", "JIRA_USERNAME",
-        "-e", "JIRA_API_TOKEN",
-        "ghcr.io/sooperset/mcp-atlassian:latest"
-      ],
-      "env": {
-        "JIRA_URL": "<YOUR_ORG_JIRA_URL>",
-        "JIRA_USERNAME": "<YOUR_COMPANY_EMAIL>",
-        "JIRA_API_TOKEN": "<YOUR_JIRA_API_TOKEN>"
-      },
-      "transport": "stdio"
+    "orion_mcp_server": {
+      "url": "http://localhost:3030/mcp",
+      "transport": "streamable_http"
     }
   }
 }
