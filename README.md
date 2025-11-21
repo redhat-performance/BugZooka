@@ -85,6 +85,22 @@ BugZooka supports two complementary modes for monitoring Slack channels that can
    - Socket Mode must be enabled in your Slack app settings
    - The bot must have the `app_mentions:read` scope
 
+### **Bot Mentions and PR Performance Analysis**
+
+When Socket Mode is enabled, users can interact with BugZooka by mentioning the bot in Slack. The bot leverages **Gemini with MCP (Model Context Protocol)** integration to provide intelligent responses powered by external tools.
+
+#### **PR Performance Analysis with Orion-MCP**
+
+BugZooka integrates with the **orion-mcp server** to analyze GitHub pull request performance and compare it against OpenShift versions. This feature uses Gemini's agentic capabilities with tool calling to orchestrate complex multi-step analysis.
+
+**Usage:**
+Mention the bot in Slack with the following format:
+
+```
+@BugZooka analyze pr: https://github.com/org/repo/pull/123, compare with 4.19
+```
+For local testing, see [Orion-MCP](https://github.com/jtaleric/orion-mcp) for instructions on how to run orion-mcp.
+
 ## **Configurables**
 This tool monitors a slack channel and uses AI to provide replies to CI failure messages. Also it operates as a singleton instance.
 
@@ -197,7 +213,9 @@ MCP servers can be integrated by adding a simple configuration in `mcp_config.js
 
 **Note**: When using Gemini mode (`ANALYSIS_MODE=gemini`) MCP tools are automatically loaded and made available to Gemini for tool calling.
 
-MCP servers support multiple transport types (`stdio`, `sse`, `streamable_http`). Below is an example configuration:
+MCP servers support multiple transport types (`stdio`, `sse`, `streamable_http`). BugZooka includes a production integration with **orion-mcp** for PR performance analysis (see [Bot Mentions and PR Performance Analysis](#bot-mentions-and-pr-performance-analysis) section).
+
+Below are example configurations for different transport types:
 
 ```json
 {
@@ -273,27 +291,68 @@ kustomize build ./kustomize | envsubst | oc delete -f -
 
 ### **Project Structure**
 ```
-bugzooka/
-├── __init__.py
-├── entrypoint.py              # Main orchestrator
-├── core/                      # Core application functionality
+BugZooka/
+├── assets/
+│   └── flow_diagram.jpg         # High-level architecture diagram
+├── bugzooka/
 │   ├── __init__.py
-│   ├── config.py             # Configuration management
-│   ├── constants.py          # Application constants
-│   └── utils.py              # Shared utility functions
-├── integrations/              # External service integrations
+│   ├── entrypoint.py            # Main orchestrator
+│   ├── core/                    # Core application functionality
+│   │   ├── __init__.py
+│   │   ├── config.py            # Configuration management
+│   │   ├── constants.py         # Application constants
+│   │   └── utils.py             # Shared utility functions
+│   ├── integrations/            # External service integrations
+│   │   ├── __init__.py
+│   │   ├── slack_fetcher.py     # Slack polling integration
+│   │   ├── slack_socket_listener.py  # Slack Socket Mode (WebSocket) integration
+│   │   ├── slack_client_base.py # Base class for Slack clients
+│   │   ├── gemini_client.py     # Gemini API client with tool calling
+│   │   ├── mcp_client.py        # MCP protocol client implementation
+│   │   ├── rag_client_util.py   # RAG vector store utilities
+│   │   └── inference.py         # Generic inference API
+│   └── analysis/                # Log analysis and processing
+│       ├── __init__.py
+│       ├── log_analyzer.py      # Main log analysis orchestration
+│       ├── log_summarizer.py    # Log summarization functionality
+│       ├── pr_analyzer.py       # PR performance analysis with Gemini+MCP
+│       ├── prow_analyzer.py     # Prow-specific CI/CD analysis
+│       ├── failure_keywords.py  # Failure pattern detection
+│       ├── xmlparser.py         # XML parsing for test results
+│       ├── jsonparser.py        # JSON parsing utilities
+│       └── prompts.py           # AI prompts and templates
+├── kustomize/                   # Kubernetes deployment manifests
+│   ├── base/
+│   │   ├── deployment.yaml      # Main BugZooka deployment
+│   │   ├── deployment-orion-mcp.yaml  # orion-mcp server deployment
+│   │   ├── service-orion-mcp.yaml     # orion-mcp service definition
+│   │   ├── configmap-mcp-config.yaml  # MCP configuration
+│   │   ├── configmap-prompts.yaml     # Prompts configuration
+│   │   ├── imagestream.yaml
+│   │   ├── kustomization.yaml
+│   │   ├── namespace.yaml
+│   │   ├── secret-quay.yaml
+│   │   └── serviceaccount-patch.yaml
+│   └── overlays/
+│       └── rag/                 # RAG-enabled deployment overlay
+│           ├── kustomization.yaml
+│           └── sidecar-patch.yaml
+├── tests/                       # Test suite
 │   ├── __init__.py
-│   ├── slack_fetcher.py      # Slack polling integration
-│   ├── slack_socket_listener.py  # Slack Socket Mode integration (WebSocket)
-│   ├── gemini_client.py      # Gemini API client
-│   └── inference.py          # Generic inference API
-└── analysis/                  # Log analysis and processing
-    ├── __init__.py
-    ├── log_analyzer.py       # Main log analysis orchestration
-    ├── log_summarizer.py     # Log summarization functionality
-    ├── prow_analyzer.py      # Prow-specific CI/CD analysis
-    ├── xmlparser.py          # XML parsing for test results
-    └── prompts.py            # AI prompts and templates
+│   ├── conftest.py              # Pytest configuration
+│   ├── helpers.py               # Test utilities
+│   ├── test_slack_fetcher.py    # Slack fetcher tests
+│   └── test_slack_socket_listener.py  # Socket mode tests
+├── Dockerfile                   # Container image definition
+├── Makefile                     # Build and deployment automation
+├── requirements.txt             # Python dependencies
+├── pytest.ini                   # Pytest configuration
+├── prompts.json                 # Product-specific prompts configuration
+├── mcp_config.json              # MCP servers configuration
+├── test_orion_mcp.py            # orion-mcp integration test
+├── LICENSE
+├── OWNERS
+└── README.md                    # This file
 ```
 
 ### **Code Quality**

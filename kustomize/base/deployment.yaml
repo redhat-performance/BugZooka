@@ -1,5 +1,5 @@
-apiVersion: apps.openshift.io/v1
-kind: DeploymentConfig
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: bugzooka
   namespace: ${BUGZOOKA_NAMESPACE}
@@ -9,26 +9,19 @@ spec:
   replicas: 1
   revisionHistoryLimit: 1
   selector:
-    app: ${BUGZOOKA_NAMESPACE}
-    deploymentconfig: bugzooka
+    matchLabels:
+      app: ${BUGZOOKA_NAMESPACE}
+      deployment: bugzooka
   strategy:
-    type: Rolling
-  triggers:
-    - type: ConfigChange
-    - type: ImageChange
-      imageChangeParams:
-        automatic: true
-        containerNames:
-          - bugzooka
-        from:
-          kind: ImageStreamTag
-          name: bugzooka:latest
-          namespace: ${BUGZOOKA_NAMESPACE}
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: ${BUGZOOKA_NAMESPACE}
-        deploymentconfig: bugzooka
+        deployment: bugzooka
     spec:
       containers:
         - name: bugzooka
@@ -42,6 +35,8 @@ spec:
               value: "openshift"
             - name: CI
               value: "prow"
+            - name: ENABLE_SOCKET_MODE
+              value: "true"
           envFrom:
             - secretRef:
                 name: bugzooka-env
@@ -49,12 +44,14 @@ spec:
             - name: prompts
               mountPath: /app/prompts.json
               subPath: prompts.json
+            - name: mcp-config
+              mountPath: /app/mcp_config.json
+              subPath: mcp_config.json
           resources:
             requests:
               cpu: "1"
-              memory: "1Gi"
+              memory: "2Gi"
             limits:
-              cpu: "2"
               memory: "2Gi"
       volumes:
         - name: prompts
@@ -63,3 +60,9 @@ spec:
             items:
               - key: prompts.json
                 path: prompts.json
+        - name: mcp-config
+          configMap:
+            name: bugzooka-mcp-config
+            items:
+              - key: mcp_config.json
+                path: mcp_config.json

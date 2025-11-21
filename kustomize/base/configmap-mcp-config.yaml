@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bugzooka-mcp-config
+  namespace: ${BUGZOOKA_NAMESPACE}
+  labels:
+    app: ${BUGZOOKA_NAMESPACE}
+data:
+  mcp_config.json: |
+    {
+      "mcp_servers": {
+        "orion_mcp_server": {
+          "url": "http://orion-mcp.bugzooka:3030/mcp",
+          "transport": "streamable_http"
+        }
+      }
+    }

@@ -9,7 +9,10 @@ resources:
   - serviceaccount-patch.yaml
   - imagestream.yaml
   - configmap-prompts.yaml
-  - deploymentconfig.yaml
+  - configmap-mcp-config.yaml
+  - deployment.yaml
+  - deployment-orion-mcp.yaml
+  - service-orion-mcp.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -18,4 +21,4 @@ secretGenerator:
   - name: bugzooka-env
     namespace: ${BUGZOOKA_NAMESPACE}
     envs:
-      - ../../.env
+      - .env

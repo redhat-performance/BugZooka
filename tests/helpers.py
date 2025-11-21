@@ -81,18 +81,26 @@ def verify_slack_messages(
         ), "Message should be threaded to the error message"
 
     # Validate first message - Error Logs Preview
+    # Can be either a file upload (is_file=True) or a regular message with blocks
     first_message = posted_messages[0]
-    blocks = _validate_message_blocks(
-        first_message, EXPECTED_MESSAGE_BLOCKS_COUNT, "Error Logs Preview"
-    )
+    if first_message.get("is_file"):
+        # File upload - validate text field instead of blocks
+        assert (
+            ERROR_LOGS_PREVIEW_HEADER in first_message.get("text", "")
+        ), "File upload should contain Error Logs Preview header"
+    else:
+        # Regular message - validate blocks
+        blocks = _validate_message_blocks(
+            first_message, EXPECTED_MESSAGE_BLOCKS_COUNT, "Error Logs Preview"
+        )
 
-    first_block_text = _get_simple_block_text(blocks[0])
-    _validate_block_content(
-        first_block_text, ERROR_LOGS_PREVIEW_HEADER, "Error Logs Preview Header"
-    )
+        first_block_text = _get_simple_block_text(blocks[0])
+        _validate_block_content(
+            first_block_text, ERROR_LOGS_PREVIEW_HEADER, "Error Logs Preview Header"
+        )
 
-    second_block_text = _get_nested_block_text(blocks[1])
-    assert len(second_block_text) > 0, "Error Logs Preview should have text"
+        second_block_text = _get_nested_block_text(blocks[1])
+        assert len(second_block_text) > 0, "Error Logs Preview should have text"
 
     # Handle analysis message - it's at index 1 if inference disabled (no job-history), index 2 if inference enabled (with job-history)
     if not inference_enabled:
