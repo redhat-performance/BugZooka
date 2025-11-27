@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/instance: orion-mcp
+  name: orion-mcp
+  namespace: ${BUGZOOKA_NAMESPACE}
+spec:
+  ports:
+  - name: http
+    port: 3030
+    protocol: TCP
+    targetPort: 3030
+  selector:
+    app.kubernetes.io/instance: orion-mcp
+    app.kubernetes.io/name: orion-mcp
+  type: ClusterIP

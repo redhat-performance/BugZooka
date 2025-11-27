@@ -1,15 +1,11 @@
 import io
-import signal
-import sys
 import time
 import re
 import os
 
-from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from bugzooka.core.config import (
-    SLACK_BOT_TOKEN,
     JEDI_BOT_SLACK_USER_ID,
     SUMMARY_LOOKBACK_SECONDS,
 )
@@ -33,6 +29,7 @@ from bugzooka.integrations.inference import (
     ask_inference_api,
 )
 from bugzooka.integrations.rag_client_util import get_rag_context
+from bugzooka.integrations.slack_client_base import SlackClientBase
 from bugzooka.core.utils import (
     to_job_history_url,
     fetch_job_history_stats,
@@ -42,62 +39,17 @@ from bugzooka.core.utils import (
 from typing import Dict, Tuple, Optional, List, Any
 
 
-class SlackMessageFetcher:
+class SlackMessageFetcher(SlackClientBase):
     """Continuously fetches new messages from a Slack channel and logs them."""
 
     def __init__(self, channel_id, logger, poll_interval=600):
         """Initialize Slack client and channel details."""
-        self.slack_bot_token = SLACK_BOT_TOKEN
-        self.channel_id = channel_id
-        self.logger = logger
+        # Initialize base class (handles WebClient, channel_id, logger, running flag, signal handler)
+        super().__init__(channel_id, logger)
+        
         self.poll_interval = poll_interval  # How often to fetch messages
         self.last_seen_timestamp = None  # Track the latest message timestamp
 
-        if not self.slack_bot_token:
-            self.logger.error("Missing SLACK_BOT_TOKEN environment variable.")
-            sys.exit(1)
-
-        self.client = WebClient(token=self.slack_bot_token)
-        self.running = True  # Control flag for loop
-
-        # Handle SIGINT (Ctrl+C) for graceful exit
-        signal.signal(signal.SIGINT, self.shutdown)
-
-    def _get_slack_message_blocks(
-        self, markdown_header, content_text, use_markdown=False
-    ):
-        """
-        Prepares a slack message building blocks
-
-        :param markdown_header: markdown header to be displayed
-        :param content_text: text message content (preformatted or markdown)
-        :param use_markdown: if True, render content as markdown; if False, use preformatted text
-        :return: a sanitized version of text blocks
-        """
-        header_block = {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": markdown_header},
-        }
-
-        if use_markdown:
-            content_block = {
-                "type": "markdown",
-                "text": content_text.strip(),
-            }
-        else:
-            content_block = {
-                "type": "rich_text",
-                "block_id": "error_logs_block",
-                "elements": [
-                    {
-                        "type": "rich_text_preformatted",
-                        "elements": [{"type": "text", "text": content_text.strip()}],
-                        "border": 0,
-                    }
-                ],
-            }
-
-        return [header_block, content_block]
 
     def _sanitize_job_text(self, text: str) -> str:
         """
@@ -134,39 +86,6 @@ class SlackMessageFetcher:
 
         return cleaned
 
-    def _chunk_text(self, text: str, limit: int = 11900) -> List[str]:
-        """
-        Split text into chunks not exceeding `limit` characters, preferring newline or
-        whitespace boundaries to avoid breaking mid-sentence.
-        """
-        if not text:
-            return [""]
-
-        chunks: List[str] = []
-        start = 0
-        text_len = len(text)
-        while start < text_len:
-            end = min(start + limit, text_len)
-            if end == text_len:
-                chunks.append(text[start:end])
-                break
-
-            # Try to break on the last newline within the window
-            window = text[start:end]
-            split_idx = window.rfind("\n")
-            if split_idx == -1:
-                # Fallback: try last whitespace
-                split_idx = max(window.rfind(" "), window.rfind("\t"))
-            if split_idx == -1:
-                # As a last resort, hard cut at limit
-                split_at = end
-            else:
-                split_at = start + split_idx + 1  # include the newline/space
-
-            chunks.append(text[start:split_at].rstrip())
-            start = split_at
-
-        return chunks
 
     def _handle_job_history(
         self,
@@ -210,7 +129,7 @@ class SlackMessageFetcher:
                     f"HTTP Status: {status_code if status_code is not None else 'unknown'}",
                     "The job history page is not accessible right now.",
                 ]
-                message_block = self._get_slack_message_blocks(
+                message_block = self.get_slack_message_blocks(
                     markdown_header=header,
                     content_text="\n".join(body_lines),
                     use_markdown=True,
@@ -237,7 +156,7 @@ class SlackMessageFetcher:
                 f"URL: <{job_history_url}|Open Job History>",
                 f"Failures: {failure_count} / {total_count}  ({failure_rate:.0f}%)  {status_emoji}",
             ]
-            message_block = self._get_slack_message_blocks(
+            message_block = self.get_slack_message_blocks(
                 markdown_header=header,
                 content_text="\n".join(body_lines),
                 use_markdown=True,
@@ -312,7 +231,7 @@ class SlackMessageFetcher:
             )
         else:
             self.logger.info("📤 Trying to just send the preview message")
-            message_block = self._get_slack_message_blocks(
+            message_block = self.get_slack_message_blocks(
                 markdown_header=f":checking: *Error Logs Preview ({categorization_message})*\n",
                 content_text=f"{errors_log_preview.strip()}",
             )
@@ -328,7 +247,7 @@ class SlackMessageFetcher:
                 "This appears to be an installation or maintenance issue. "
                 "Please re-trigger the run."
             )
-            message_block = self._get_slack_message_blocks(
+            message_block = self.get_slack_message_blocks(
                 markdown_header=":repeat: *Re-trigger Suggested*\n",
                 content_text=retrigger_message,
             )
@@ -341,7 +260,7 @@ class SlackMessageFetcher:
 
     def _send_analysis_result(self, response, max_ts):
         """Send the final analysis result to Slack."""
-        message_block = self._get_slack_message_blocks(
+        message_block = self.get_slack_message_blocks(
             markdown_header=":fast_forward: *Implications to understand (AI generated) *\n",
             content_text=response,
             use_markdown=True,
@@ -360,7 +279,7 @@ class SlackMessageFetcher:
             "The inference API is currently unavailable. "
             "Raw error logs have been provided above for manual review."
         )
-        message_block = self._get_slack_message_blocks(
+        message_block = self.get_slack_message_blocks(
             markdown_header=":warning: *Analysis Unavailable*\n",
             content_text=fallback_message,
         )
@@ -729,9 +648,9 @@ class SlackMessageFetcher:
 
             CHUNK_LIMIT = 11900
             for header, content in sections:
-                chunks = self._chunk_text(content, CHUNK_LIMIT)
+                chunks = self.chunk_text(content, CHUNK_LIMIT)
                 for chunk in chunks:
-                    message_block = self._get_slack_message_blocks(
+                    message_block = self.get_slack_message_blocks(
                         markdown_header=" ",  # no header line
                         content_text=chunk,
                         use_markdown=True,
@@ -765,8 +684,11 @@ class SlackMessageFetcher:
         finally:
             self.logger.info("👋 Shutting down gracefully.")
 
-    def shutdown(self):
+    def shutdown(self, *args):
         """Handles graceful shutdown on user interruption."""
+        if not self.running:
+            return
+            
         self.logger.info("🛑 Received exit signal. Stopping message fetcher...")
-        self.running = False
-        sys.exit(0)
+        # Call parent class shutdown (will set running=False and exit)
+        super().shutdown(*args)

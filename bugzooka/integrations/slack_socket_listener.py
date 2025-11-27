@@ -3,26 +3,26 @@ Slack Socket Mode integration for real-time event listening.
 This integration uses WebSockets to listen for @ mentions of the bot in real-time.
 Mentions are processed asynchronously using a thread pool for concurrent handling.
 """
+import asyncio
 import concurrent.futures
 import logging
-import signal
 import sys
-from threading import Lock
+from threading import Lock, Event
 from typing import Dict, Any, Set
 
-from slack_sdk.web import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 
 from bugzooka.core.config import (
-    SLACK_BOT_TOKEN,
     SLACK_APP_TOKEN,
     JEDI_BOT_SLACK_USER_ID,
 )
+from bugzooka.analysis.pr_analyzer import analyze_pr_with_gemini
+from bugzooka.integrations.slack_client_base import SlackClientBase
 
 
-class SlackSocketListener:
+class SlackSocketListener(SlackClientBase):
     """
     Real-time Slack listener using Socket Mode.
     Listens for @ mentions of the bot and processes messages asynchronously in real-time.
@@ -38,27 +38,19 @@ class SlackSocketListener:
         :param logger: Logger instance
         :param max_workers: Maximum number of concurrent mention handlers (default: 5)
         """
-        self.slack_bot_token = SLACK_BOT_TOKEN
-        self.slack_app_token = SLACK_APP_TOKEN
-        self.channel_id = channel_id
-        self.logger = logger
-        self.running = True
+        # Initialize base class (handles WebClient, channel_id, logger, running flag, signal handler)
+        super().__init__(channel_id, logger)
 
-        if not self.slack_bot_token:
-            self.logger.error("Missing SLACK_BOT_TOKEN environment variable.")
-            sys.exit(1)
+        self.slack_app_token = SLACK_APP_TOKEN
 
         if not self.slack_app_token:
             self.logger.error("Missing SLACK_APP_TOKEN environment variable.")
             sys.exit(1)
 
-        # Initialize WebClient for API calls
-        self.web_client = WebClient(token=self.slack_bot_token)
-
-        # Initialize Socket Mode client
+        # Initialize Socket Mode client (uses self.client from base class)
         self.socket_client = SocketModeClient(
             app_token=self.slack_app_token,
-            web_client=self.web_client,
+            web_client=self.client,
         )
 
         # Initialize thread pool for async processing
@@ -70,9 +62,6 @@ class SlackSocketListener:
         # Track messages being processed to avoid duplicates
         self.processing_lock = Lock()
         self.processing_messages: Set[str] = set()
-
-        # Handle SIGINT for graceful exit
-        signal.signal(signal.SIGINT, self.shutdown)
 
     def _should_process_message(self, event: Dict[str, Any]) -> bool:
         """
@@ -103,7 +92,8 @@ class SlackSocketListener:
     def _process_mention(self, event: Dict[str, Any]) -> None:
         """
         Process an @ mention of the bot (core processing logic).
-        Sends greeting message in response to the mention.
+        Checks for "analyze pr: {PR link}" pattern and calls Orion MCP if found.
+        Otherwise sends greeting message.
 
         :param event: Slack event data
         """
@@ -113,14 +103,86 @@ class SlackSocketListener:
         user = event.get("user", "Unknown")
         ts = event.get("ts")
         channel = event.get("channel")
+        text = event.get("text", "")
 
         self.logger.info(f"📩 Processing mention from {user} at ts {ts}")
 
-        # Send simple greeting message
+        # Check if message contains "analyze pr"
+        if "analyze pr" in text.lower():
+            try:
+                # Send initial acknowledgment
+                self.client.chat_postMessage(
+                    channel=channel,
+                    text="🔍 Analyzing PR performance... This may take a few moments.",
+                    thread_ts=ts,
+                )
+                
+                # Analyze PR from text (need to run async function in sync context)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    analysis_result = loop.run_until_complete(
+                        analyze_pr_with_gemini(text)
+                    )
+                finally:
+                    loop.close()
+                
+                # Split the result by "====" separator and send each part as a separate message
+                message_content = analysis_result['message']
+                separator = "=" * 80  # 80 equals signs
+                
+                # Check if separator exists in the message
+                if separator in message_content:
+                    # Split by separator
+                    sections = message_content.split(separator)
+                    
+                    # Send first section with the header
+                    if sections:
+                        first_section = sections[0].strip()
+                        self.client.chat_postMessage(
+                            channel=channel,
+                            text=f":robot_face: *PR Performance Analysis (AI generated)*\n\n{first_section}",
+                            thread_ts=ts,
+                        )
+                    
+                    # Send remaining sections (tables) as separate messages
+                    for i, section in enumerate(sections[1:], start=1):
+                        section = section.strip()
+                        if section:  # Only send non-empty sections
+                            self.client.chat_postMessage(
+                                channel=channel,
+                                text=section,
+                                thread_ts=ts,
+                            )
+                            self.logger.debug(f"Sent section {i} of PR analysis")
+                else:
+                    # No separator found, send everything in one message
+                    self.client.chat_postMessage(
+                        channel=channel,
+                        text=f":robot_face: *PR Performance Analysis (AI generated)*\n\n{message_content}",
+                        thread_ts=ts,
+                    )
+                
+                if analysis_result["success"]:
+                    org, repo, pr_number, version = analysis_result["pr_info"]
+                    self.logger.info(f"✅ Sent PR analysis for {org}/{repo}#{pr_number} (OpenShift {version}) to {user}")
+                else:
+                    self.logger.warning(f"⚠️ PR analysis failed: {analysis_result['message']}")
+                    
+            except Exception as e:
+                self.logger.error(f"Error processing PR summarization: {e}", exc_info=True)
+                self.client.chat_postMessage(
+                    channel=channel,
+                    text=f"❌ Unexpected error: {str(e)}",
+                    thread_ts=ts,
+                )
+            return
+
+        # Default: Send simple greeting message
         try:
-            self.web_client.chat_postMessage(
+            self.client.chat_postMessage(
                 channel=channel,
-                text="Hello from PerfScale Jedi",
+                text="May the force be with you! :performance_jedi:\n\n💡 *Tip:* Try mentioning me with `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` to get performance analysis!",
                 thread_ts=ts,
             )
             self.logger.info(f"✅ Sent greeting to {user}")
@@ -183,7 +245,7 @@ class SlackSocketListener:
                 ts = event.get("ts")
                 channel = event.get("channel")
                 try:
-                    self.web_client.reactions_add(
+                    self.client.reactions_add(
                         name="eyes",
                         channel=channel,
                         timestamp=ts,
@@ -236,8 +298,6 @@ class SlackSocketListener:
             self.logger.info("✅ WebSocket connection established")
 
             # Keep the process running
-            from threading import Event
-
             Event().wait()
 
         except KeyboardInterrupt:
@@ -276,5 +336,6 @@ class SlackSocketListener:
         except Exception as e:
             self.logger.warning(f"Error closing socket connection: {e}")
 
-        sys.exit(0)
+        # Call parent class shutdown (will exit)
+        super().shutdown(*args)
 

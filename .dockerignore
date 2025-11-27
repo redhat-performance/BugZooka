@@ -33,6 +33,7 @@ venv/
 env/
 ENV/
 .venv/
+.env
 
 # IDE and editor files
 .vscode/
@@ -57,6 +58,7 @@ assets/
 .cache
 pytest.ini
 .pylintrc
+tests/
 
 # Development tools config
 .pre-commit-config.yaml
@@ -73,3 +75,7 @@ logs/
 *.temp
 .tmp/
 .temp/
+
+# Misc files
+kustomize/
+assets/

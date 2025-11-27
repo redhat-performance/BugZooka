@@ -5,7 +5,6 @@ These tests verify the Socket Mode event handling and app_mention processing.
 """
 
 import logging
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -29,7 +28,7 @@ def mock_socket_mode_client():
 @pytest.fixture
 def mock_web_client():
     """Mock WebClient for testing."""
-    with patch("bugzooka.integrations.slack_socket_listener.WebClient") as mock_client:
+    with patch("bugzooka.integrations.slack_client_base.WebClient") as mock_client:
         mock_instance = MagicMock()
         mock_client.return_value = mock_instance
         yield mock_client
@@ -78,8 +77,8 @@ class TestSlackSocketListener:
         """Test that SlackSocketListener initializes correctly."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
                 assert listener.channel_id == CHANNEL_ID
@@ -92,8 +91,8 @@ class TestSlackSocketListener:
         """Test that app_mention events in the correct channel are processed."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
                 event = create_app_mention_event(
@@ -109,8 +108,8 @@ class TestSlackSocketListener:
         """Test that mentions in other channels are ignored."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
                 event = create_app_mention_event(
@@ -127,8 +126,8 @@ class TestSlackSocketListener:
         """Test that bot's own messages are ignored."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 with patch("bugzooka.integrations.slack_socket_listener.JEDI_BOT_SLACK_USER_ID", "UBOTID"):
                     listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
@@ -145,8 +144,8 @@ class TestSlackSocketListener:
         """Test processing app_mention sends greeting message."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
                 event = create_app_mention_event(
@@ -161,7 +160,7 @@ class TestSlackSocketListener:
                 # Verify greeting message was sent (reaction happens earlier in the flow)
                 mock_web_client.return_value.chat_postMessage.assert_called_once_with(
                     channel=CHANNEL_ID,
-                    text="Hello from PerfScale Jedi",
+                    text="May the force be with you! :performance_jedi:\n\n💡 *Tip:* Try mentioning me with `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` to get performance analysis!",
                     thread_ts="1234567890.123456",
                 )
 
@@ -171,8 +170,8 @@ class TestSlackSocketListener:
         """Test submitting mention for async processing in background thread."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger, max_workers=2)
 
                 event = create_app_mention_event(
@@ -196,8 +195,8 @@ class TestSlackSocketListener:
         """Test submission wrapper prevents duplicate processing."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger, max_workers=2)
 
                 event = create_app_mention_event(
@@ -221,8 +220,8 @@ class TestSlackSocketListener:
         """Test that Socket Mode requests are properly acknowledged."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
                 event = create_app_mention_event(text="<@UBOTID> test", ts="1234567890.123456")
@@ -245,8 +244,8 @@ class TestSlackSocketListener:
         """Test that eyes emoji is added immediately before async processing."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
                 event = create_app_mention_event(
@@ -274,8 +273,8 @@ class TestSlackSocketListener:
         """Test that non-app_mention events are acknowledged but not processed."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
                 # Create a different event type
@@ -301,8 +300,8 @@ class TestSlackSocketListener:
         """Test that errors during mention processing are properly logged."""
         logger = logging.getLogger("test")
 
-        with patch("bugzooka.integrations.slack_socket_listener.SLACK_BOT_TOKEN", "xoxb-test-token"):
-            with patch("bugzooka.integrations.slack_socket_listener.SLACK_APP_TOKEN", "xapp-test-token"):
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
                 listener = SlackSocketListener(channel_id=CHANNEL_ID, logger=logger)
 
                 # Mock chat_postMessage to raise an exception

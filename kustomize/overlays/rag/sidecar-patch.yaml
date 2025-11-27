@@ -1,5 +1,5 @@
-apiVersion: apps.openshift.io/v1
-kind: DeploymentConfig
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: bugzooka
 spec:
@@ -29,6 +29,8 @@ spec:
             - name: CI
               value: "prow"
             - name: ENABLE_INFERENCE
+              value: "true"
+            - name: ENABLE_SOCKET_MODE
               value: "true"
             - name: RAG_DB_PATH
               value: "/rag"
