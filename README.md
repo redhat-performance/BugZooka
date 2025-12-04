@@ -79,7 +79,7 @@ BugZooka supports two complementary modes for monitoring Slack channels that can
    # Run with both polling AND socket mode
    make run ARGS="--product openshift --ci prow --enable-socket-mode"
    ```
-   
+
    **Socket Mode Requirements:**
    - An app-level token (`xapp-*`) must be configured as `SLACK_APP_TOKEN`
    - Socket Mode must be enabled in your Slack app settings
@@ -140,6 +140,7 @@ GENERIC_INFERENCE_URL="YOUR_INFERENCE_ENDPOINT"
 GENERIC_INFERENCE_TOKEN="YOUR_INFERENCE_TOKEN"
 GENERIC_MODEL="YOUR_INFERENCE_MODEL"
 ```
+
 **Note**: Please make sure to provide details for all the mandatory attributes and for the product that is intended to be used for testing along with fallback (i.e. GENERIC details) to handle failover use-cases.
 
 
@@ -315,6 +316,7 @@ BugZooka has a dependency on [orion-mcp service](https://github.com/jtaleric/ori
 export QUAY_CRED='<base64 encoded pull secret>'
 export BUGZOOKA_IMAGE='<bugzooka image tag>'
 export BUGZOOKA_NAMESPACE='<your namespace>'
+export JIRA_MCP_IMAGE='<jira mcp server image>'
 make deploy
 
 # Cleanup resources

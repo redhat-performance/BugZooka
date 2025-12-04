@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/instance: jira-mcp
+  name: jira-mcp
+  namespace: ${BUGZOOKA_NAMESPACE}
+spec:
+  ports:
+  - name: http
+    port: 3031
+    protocol: TCP
+    targetPort: 3031
+  selector:
+    app.kubernetes.io/instance: jira-mcp
+    app.kubernetes.io/name: jira-mcp
+  type: ClusterIP

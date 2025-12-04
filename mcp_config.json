@@ -3,6 +3,10 @@
     "orion_mcp_server": {
       "url": "http://localhost:3030/mcp",
       "transport": "streamable_http"
+    },
+    "jira_mcp_server": {
+      "url": "http://localhost:3031/mcp",
+      "transport": "streamable_http"
     }
   }
 }

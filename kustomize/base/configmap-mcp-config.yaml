@@ -12,6 +12,10 @@ data:
         "orion_mcp_server": {
           "url": "http://orion-mcp.orion-mcp:3030/mcp",
           "transport": "streamable_http"
+        },
+        "jira_mcp_server": {
+          "url": "http://jira-mcp.${BUGZOOKA_NAMESPACE}:3031/mcp",
+          "transport": "streamable_http"
         }
       }
     }
