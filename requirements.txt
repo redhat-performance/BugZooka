@@ -93,7 +93,7 @@ llama-parse==0.6.76
 logmine==0.4.1
 markdown-it-py==3.0.0
 MarkupSafe==3.0.3
-marshmallow==3.26.1
+marshmallow==3.26.2
 mccabe==0.7.0
 mcp==1.12.4
 mdurl==0.1.2
