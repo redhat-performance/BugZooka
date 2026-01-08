@@ -175,7 +175,7 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.2
 unearth==0.17.2
-urllib3==2.3.0
+urllib3==2.6.3
 uvicorn==0.38.0
 virtualenv==20.28.1
 wrapt==1.17.3
