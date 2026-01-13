@@ -177,7 +177,7 @@ tzdata==2025.2
 unearth==0.17.2
 urllib3==2.3.0
 uvicorn==0.38.0
-virtualenv==20.28.1
+virtualenv==20.36.1
 wrapt==1.17.3
 xmltodict==0.14.2
 yarl==1.18.3
