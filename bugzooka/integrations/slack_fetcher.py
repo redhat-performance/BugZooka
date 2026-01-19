@@ -46,7 +46,7 @@ class SlackMessageFetcher(SlackClientBase):
         """Initialize Slack client and channel details."""
         # Initialize base class (handles WebClient, logger, channel_id, running flag, signal handler)
         super().__init__(logger, channel_id)
-        
+
         self.poll_interval = poll_interval  # How often to fetch messages
         self.last_seen_timestamp = None  # Track the latest message timestamp
 
@@ -294,9 +294,6 @@ class SlackMessageFetcher(SlackClientBase):
         self,
         oldest_ts: str,
         latest_ts: str,
-        product: str,
-        ci_system: str,
-        product_config,
     ) -> Tuple[
         int,
         int,
@@ -357,7 +354,7 @@ class SlackMessageFetcher(SlackClientBase):
                     v = vm.group(0) if vm else None
                     if v:
                         version_counts[v] = version_counts.get(v, 0) + 1
-                    analysis = download_and_analyze_logs(text, ci_system)
+                    analysis = download_and_analyze_logs(text)
                     (
                         errors_list,
                         categorization_message,
@@ -418,9 +415,7 @@ class SlackMessageFetcher(SlackClientBase):
         # Check for expected RAG artifacts (JSON index/store files)
         return any(f.name.endswith(".json") for f in os.scandir(rag_dir))
 
-    def _process_message(
-        self, msg, product, ci_system, product_config, enable_inference
-    ):
+    def _process_message(self, msg, product, product_config, enable_inference):
         """Process a single message through the complete pipeline."""
         user = msg.get("user", "Unknown")
         text = msg.get("text", "No text available")
@@ -440,9 +435,6 @@ class SlackMessageFetcher(SlackClientBase):
             verbose = "verbose" in text_lower
             self.logger.info("Triggering time summary on demand for %s%s", value, unit)
             self.post_time_summary(
-                product=product,
-                ci=ci_system,
-                product_config=product_config,
                 thread_ts=ts,
                 lookback_seconds=lookback,
                 verbose=verbose,
@@ -461,7 +453,7 @@ class SlackMessageFetcher(SlackClientBase):
             categorization_message,
             requires_llm,
             is_install_issue,
-        ) = download_and_analyze_logs(text, ci_system)
+        ) = download_and_analyze_logs(text)
         if errors_list is None:
             return ts
 
@@ -545,7 +537,6 @@ class SlackMessageFetcher(SlackClientBase):
         """Fetches only the latest messages from the Slack channel."""
         try:
             product = kwargs["product"]
-            ci_system = kwargs["ci"]
             product_config = kwargs["product_config"]
             enable_inference = kwargs["enable_inference"]
 
@@ -577,7 +568,7 @@ class SlackMessageFetcher(SlackClientBase):
                         max_ts = ts
 
                     processed_ts = self._process_message(
-                        msg, product, ci_system, product_config, enable_inference
+                        msg, product, product_config, enable_inference
                     )
 
                     if processed_ts and float(processed_ts) > float(
@@ -607,9 +598,6 @@ class SlackMessageFetcher(SlackClientBase):
         Fetch messages from the last lookback_seconds, aggregate failures by type, and post a summary.
         """
         try:
-            product = kwargs["product"]
-            ci_system = kwargs["ci"]
-            product_config = kwargs["product_config"]
             thread_ts: Optional[str] = kwargs.get("thread_ts")
             lookback_seconds: int = kwargs.get(
                 "lookback_seconds", SUMMARY_LOOKBACK_SECONDS
@@ -630,9 +618,6 @@ class SlackMessageFetcher(SlackClientBase):
             ) = self._summarize_messages_in_range(
                 oldest_ts=oldest,
                 latest_ts=latest,
-                product=product,
-                ci_system=ci_system,
-                product_config=product_config,
             )
 
             # Build posting sections in summarizer to keep this class thin
@@ -647,7 +632,7 @@ class SlackMessageFetcher(SlackClientBase):
             )
 
             CHUNK_LIMIT = 11900
-            for header, content in sections:
+            for _, content in sections:
                 chunks = self.chunk_text(content, CHUNK_LIMIT)
                 for chunk in chunks:
                     message_block = self.get_slack_message_blocks(

@@ -40,9 +40,7 @@ podman-build:  ## Build podman image
 podman-run:  ## Run podman container
 	podman run -d \
 		-e PRODUCT=openshift \
-		-e CI=prow \
 		-e ENABLE_INFERENCE=true \
-		-e ANALYSIS_MODE=gemini \
 		-e GEMINI_VERIFY_SSL=false \
 		-v ./.env:/app/.env:Z \
 		bugzooka:latest

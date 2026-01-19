@@ -22,10 +22,6 @@ SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN", None)  # For Socket Mode (xapp-*)
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", None)
 JEDI_BOT_SLACK_USER_ID = os.getenv("JEDI_BOT_SLACK_USER_ID", None)
 
-# Analysis mode configuration
-# Options: "gemini", or any other value defaults to agent-based analysis
-ANALYSIS_MODE = os.getenv("ANALYSIS_MODE", None)
-
 # Weekly summary lookback window (seconds). Default: 7 days
 SUMMARY_LOOKBACK_SECONDS = int(
     os.getenv("SUMMARY_LOOKBACK_SECONDS", SUMMARY_LOOKBACK_SECONDS_DEFAULT)

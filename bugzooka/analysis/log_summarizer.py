@@ -2,7 +2,6 @@ import logging
 import os
 import re
 import subprocess
-from collections import deque
 from typing import List, Tuple, Optional
 import requests
 
@@ -223,73 +222,6 @@ def search_prow_errors(directory_path, job_name):
     if logjuicer_extract is None:
         return get_logmine_extract(directory_path)
     return logjuicer_extract
-
-
-def download_url_to_log(url, log_file_path):
-    """
-    Downloads the content from a given URL and writes it to a log file.
-
-    :param url: url of the job
-    :param log_file_path: log file path
-    :return: output directory
-    """
-    output_dir = "/tmp"
-    log_file_path = output_dir + log_file_path
-
-    logger.info("Creating a file %s", log_file_path)
-    try:
-        response = requests.get(url, stream=True, verify=False, timeout=30)
-        response.raise_for_status()
-        with open(log_file_path, "wb") as file:
-            for chunk in response.iter_content(chunk_size=MAX_CONTEXT_SIZE):
-                file.write(chunk)
-        logger.info("Successfully downloaded content from %s to %s", url, log_file_path)
-
-    except requests.exceptions.RequestException as e:
-        logger.error("Error downloading from %s: %s", url, e)
-    except Exception as e:
-        logger.error("An error occurred: %s", e)
-    return output_dir
-
-
-def search_errors_in_file(file_path, context_lines=3):
-    """
-    Opens a log file and searches for error terms while capturing context.
-
-    :param file_path: The path of the log file to search for errors
-    :param context_lines: Number of lines to include before and after the error
-    :return: A list of error contexts, each containing surrounding lines
-    """
-    error_keywords = ["error", "failure", "exception", "fatal", "panic"]
-    error_contexts = []
-    previous_lines = deque(maxlen=context_lines)
-
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            log_lines = f.readlines()
-
-        for i, line in enumerate(log_lines):
-            if any(keyword in line.lower() for keyword in error_keywords):
-                # Capture context lines before and after the error
-                start = max(0, i - context_lines)
-                end = min(len(log_lines), i + context_lines + 1)
-                error_snippet = log_lines[start:end]
-                error_contexts.append("".join(error_snippet).strip())
-
-            previous_lines.append(line)
-
-        if error_contexts:
-            logger.info(
-                "Found %s errors with context in %s:", len(error_contexts), file_path
-            )
-            return error_contexts
-
-        logger.info("No errors found in %s.", file_path)
-        return []
-
-    except Exception as e:
-        logger.error("Error opening the file %s: %s", file_path, e)
-        return []
 
 
 def generate_prompt(error_list):

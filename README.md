@@ -50,14 +50,13 @@ make format
 # Run via Makefile
 make run ARGS="--help"
 
-usage: entrypoint.py [-h] [--product PRODUCT] [--ci CI] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--enable-inference] [--enable-socket-mode]
+usage: entrypoint.py [-h] [--product PRODUCT] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}] [--enable-inference] [--enable-socket-mode]
 
 BugZooka - Slack Log Analyzer Bot
 
 options:
   -h, --help            show this help message and exit
   --product PRODUCT     Product type (e.g., openshift, ansible)
-  --ci CI               CI system name
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL). Can also be set via LOG_LEVEL env var
   --enable-inference    Enable inference mode. Can also be set via ENABLE_INFERENCE env var (true/false).
@@ -71,13 +70,13 @@ BugZooka supports two complementary modes for monitoring Slack channels that can
 1. **Polling Mode (Always Active)**: Periodically fetches new messages from the Slack channel at regular intervals. This mode automatically processes all failure messages posted to the channel.
    ```bash
    # Run with polling mode only (default)
-   make run ARGS="--product openshift --ci prow"
+   make run ARGS="--product openshift"
    ```
 
 2. **Socket Mode (Optional Add-on)**: Uses WebSocket connections to listen for @ mentions of the bot in real-time. When enabled, this runs in addition to polling mode, allowing users to trigger on-demand analysis by mentioning the bot.
    ```bash
    # Run with both polling AND socket mode
-   make run ARGS="--product openshift --ci prow --enable-socket-mode"
+   make run ARGS="--product openshift --enable-socket-mode"
    ```
    
    **Socket Mode Requirements:**
@@ -115,17 +114,14 @@ SLACK_CHANNEL_ID="YOUR_SLACK_CHANNEL_ID"
 SLACK_APP_TOKEN="YOUR_SLACK_APP_TOKEN"  # App-level token (xapp-*) for WebSocket mode
 ENABLE_SOCKET_MODE="true"  # Set to "true" to enable Socket Mode alongside polling
 
-### Analysis Mode Configuration
-ANALYSIS_MODE="gemini"  # Options: "gemini" (with tool calling support)
-
-### Gemini API Configuration (required when ANALYSIS_MODE=gemini)
+### Gemini API Configuration
 GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
 GEMINI_API_URL="YOUR_GEMINI_API_URL"
 GEMINI_VERIFY_SSL="true"  # Set to "false" for self-signed certificates
 
 ### Product based inference details that contain endpoint, token and model details.
 
-// Openshift inference
+// OpenShift inference
 OPENSHIFT_INFERENCE_URL="YOUR_INFERENCE_ENDPOINT"
 OPENSHIFT_INFERENCE_TOKEN="YOUR_INFERENCE_TOKEN"
 OPENSHIFT_MODEL="YOUR_INFERENCE_MODEL"
@@ -134,18 +130,12 @@ OPENSHIFT_MODEL="YOUR_INFERENCE_MODEL"
 ANSIBLE_INFERENCE_URL="YOUR_INFERENCE_ENDPOINT"
 ANSIBLE_INFERENCE_TOKEN="YOUR_INFERENCE_TOKEN"
 ANSIBLE_MODEL="YOUR_INFERENCE_MODEL"
-
-// Generic inference for fallback
-GENERIC_INFERENCE_URL="YOUR_INFERENCE_ENDPOINT"
-GENERIC_INFERENCE_TOKEN="YOUR_INFERENCE_TOKEN"
-GENERIC_MODEL="YOUR_INFERENCE_MODEL"
 ```
-**Note**: Please make sure to provide details for all the mandatory attributes and for the product that is intended to be used for testing along with fallback (i.e. GENERIC details) to handle failover use-cases.
 
 
 ### **Prompts**
-Along with secrets, prompts are configurable using a `prompts.json` in the root directory. If not specified generic prompt will be used. Example `prompts.json` content
-```
+Prompts are configurable using a `prompts.json` in the root directory. Example `prompts.json` content:
+```json
 {
   "OPENSHIFT_PROMPT": {
     "system": "You are an expert in OpenShift, Kubernetes, and cloud infrastructure. Your task is to analyze logs and summaries related to OpenShift environments. Given a log summary, identify the root cause, potential fixes, and affected components. Be precise and avoid generic troubleshooting steps. Prioritize OpenShift-specific debugging techniques.",
@@ -244,7 +234,7 @@ BugZooka can operate in chatbot mode using Slack Socket Mode for real-time event
 ### **MCP Servers**
 MCP servers can be integrated by adding a simple configuration in `mcp_config.json` file in the root directory.
 
-**Note**: When using Gemini mode (`ANALYSIS_MODE=gemini`) MCP tools are automatically loaded and made available to Gemini for tool calling.
+**Note**: MCP tools are automatically loaded and made available to Gemini for tool calling.
 
 MCP servers support multiple transport types (`stdio`, `sse`, `streamable_http`). BugZooka includes a production integration with **orion-mcp** for PR performance analysis (see [Bot Mentions and PR Performance Analysis](#bot-mentions-and-pr-performance-analysis) section).
 
@@ -296,7 +286,6 @@ podman push quay.io/YOUR_REPO/bugzooka:latest
 # Run as a container (with both polling and socket mode)
 podman run -d \
   -e PRODUCT=openshift \
-  -e CI=prow \
   -e ENABLE_INFERENCE=true \
   -e ENABLE_SOCKET_MODE=true \
   -v /path-to/prompts.json:/app/prompts.json:Z \

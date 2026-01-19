@@ -30,9 +30,6 @@ def main() -> None:
         help="Product type (e.g., openshift, ansible)",
     )
     parser.add_argument(
-        "--ci", type=str, default=os.environ.get("CI"), help="CI system name"
-    )
-    parser.add_argument(
         "--log-level",
         type=str,
         choices=VALID_LOG_LEVELS,
@@ -58,18 +55,12 @@ def main() -> None:
     configure_logging(args.log_level)
     logger = logging.getLogger(__name__)
 
-    missing_args = []
     if not args.product:
-        missing_args.append("product or PRODUCT")
-    if not args.ci:
-        missing_args.append("ci or CI")
-    if missing_args:
-        logger.error("Missing required arguments or env vars: {%s}", missing_args)
+        logger.error("Missing required argument: product or PRODUCT env var")
         sys.exit(1)
 
     kwargs = {
         "product": args.product.upper(),
-        "ci": args.ci.upper(),
         "product_config": get_product_config(product_name=args.product.upper()),
         "enable_inference": args.enable_inference,
     }
@@ -79,10 +70,9 @@ def main() -> None:
     )
 
     listener = None
-    
+
     # If socket mode is enabled, start it in a separate thread
     if args.enable_socket_mode:
-
         logger.info("Starting Socket Mode (WebSocket) for responding to @ mentions")
         listener = SlackSocketListener(logger=logger)
 
@@ -102,7 +92,7 @@ def main() -> None:
         if listener:
             listener.shutdown(signum, frame)
         fetcher.shutdown(signum, frame)
-    
+
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
