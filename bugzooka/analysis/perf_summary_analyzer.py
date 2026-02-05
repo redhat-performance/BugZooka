@@ -1,106 +1,52 @@
 """
 Performance Summary Analyzer.
-Provides performance metrics summary via simple REST API calls to orion-mcp server.
-
-Uses direct HTTP calls to /api/* endpoints instead of MCP protocol,
-which avoids the parameter-dropping bugs in langchain-mcp-adapters.
+Provides performance metrics summary via MCP tools exposed by orion-mcp.
 """
-import hashlib
+import json
 import logging
 import os
-import random
 from typing import Any, List, Optional
 
-import httpx
+from bugzooka.integrations.mcp_client import (
+    get_mcp_tool,
+    initialize_global_resources_async,
+)
 
 logger = logging.getLogger(__name__)
 
-# Orion MCP REST API base URL
-ORION_API_BASE_URL = os.getenv("ORION_API_BASE_URL", "http://localhost:3030")
-
-# Test mode: bypass OpenSearch by returning mock data
-_TEST_MODE = os.getenv("PERF_SUMMARY_TEST_MODE", "false").lower() in (
-    "1",
-    "true",
-    "yes",
-)
-_TEST_VERSIONS = {
-    v.strip()
-    for v in os.getenv("PERF_SUMMARY_TEST_VERSIONS", "4.19,4.20").split(",")
-    if v.strip()
-}
-
-_MOCK_CONFIGS = [
-    "small-scale-udn-l3.yaml",
-    "med-scale-udn-l3.yaml",
+# Default control plane configs used when user doesn't specify a config
+_DEFAULT_CONTROL_PLANE_CONFIGS = [
+    "okd-control-plane-cluster-density.yaml",
+    "okd-control-plane-node-density.yaml",
+    "okd-control-plane-node-density-cni.yaml",
+    "okd-control-plane-crd-scale.yaml",
 ]
-_DEFAULT_MOCK_METRICS = [
-    "podReadyLatency_P99",
-    "podReadyLatency_P50",
-    "ovnCPU_avg",
-    "ovnCPU_P99",
-    "kubeAPIServerThroughput",
-]
-_MOCK_METRICS_BY_CONFIG = {
-    "small-scale-udn-l3.yaml": [
-        "podReadyLatency_P99",
-        "podReadyLatency_P50",
-        "ovnCPU_avg",
-        "kubeAPIServerThroughput",
-    ],
-    "med-scale-udn-l3.yaml": [
-        "podReadyLatency_P99",
-        "podReadyLatency_P50",
-        "ovnCPU_avg",
-        "ovnCPU_P99",
-        "kubeAPIServerThroughput",
-    ],
-}
+
+# Slack message size limit (actual is ~4000, use 3500 to be safe)
+_SLACK_MESSAGE_LIMIT = int(os.getenv("PERF_SUMMARY_SLACK_MSG_LIMIT", "3500"))
 
 
-def _mock_metrics_for_config(config: str) -> List[str]:
-    return _MOCK_METRICS_BY_CONFIG.get(config, _DEFAULT_MOCK_METRICS)
+def _coerce_mcp_result(result: Any) -> Any:
+    if isinstance(result, tuple) and len(result) == 2:
+        result = result[0]
+    if isinstance(result, str):
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return result
+    return result
 
 
-def _mock_meta_for_config(config: str) -> dict:
-    metrics = _mock_metrics_for_config(config)
-
-    def _infer_moi(metric_name: str) -> str:
-        if "_" in metric_name:
-            suffix = metric_name.split("_")[-1]
-            suffix_upper = suffix.upper()
-            if suffix_upper.startswith("P") and suffix_upper[1:].isdigit():
-                return suffix_upper
-            if suffix in ("avg", "max", "min", "value"):
-                return suffix
-        return "value"
-
-    return {
-        metric: {
-            "direction": 1,
-            "threshold": 10.0,
-            "metric_of_interest": _infer_moi(metric),
-        }
-        for metric in metrics
-    }
-
-
-def _stable_seed(*parts: str) -> int:
-    joined = "::".join(parts).encode("utf-8")
-    digest = hashlib.sha256(joined).hexdigest()
-    return int(digest[:8], 16)
-
-
-def _mock_series(config: str, metric: str, version: str, lookback: int) -> List[float]:
-    seed = _stable_seed(config, metric, version)
-    rng = random.Random(seed)
-    base = rng.uniform(10.0, 100.0)
-    trend = rng.uniform(-0.5, 0.5)
-    values = []
-    for i in range(lookback):
-        noise = rng.uniform(-1.5, 1.5)
-        values.append(round(base + (trend * i) + noise, 4))
-    return values
+async def _call_mcp_tool(tool_name: str, args: dict[str, Any]) -> Any:
+    await initialize_global_resources_async()
+    tool = get_mcp_tool(tool_name)
+    if tool is None:
+        raise RuntimeError(f"MCP tool '{tool_name}' not found")
+    if hasattr(tool, "ainvoke"):
+        result = await tool.ainvoke(args)
+    else:
+        result = tool.invoke(args)
+    return _coerce_mcp_result(result)
 
 
 def _calculate_stats(values: List[float]) -> dict:
@@ -113,20 +59,27 @@ def _calculate_stats(values: List[float]) -> dict:
     }
 
 
-def _calculate_weekly_change(values: List[float]) -> Optional[float]:
+def _calculate_weekly_change_calendar(
+    this_week_values: List[float], last_week_values: List[float]
+) -> Optional[float]:
     """
-    Compare last 7 values vs prior 7 values.
-    Returns percent change, or None if insufficient data.
+    Calculate weekly change using calendar-based data.
+    Compares average of this week (last 7 days) vs last week (prior 7 days).
+
+    :param this_week_values: Values from the last 7 calendar days
+    :param last_week_values: Values from the prior 7 calendar days
+    :return: Percent change, or None if insufficient data
     """
-    if len(values) < 14:
+    if not this_week_values or not last_week_values:
         return None
-    week1 = values[:7]
-    week2 = values[7:14]
-    avg1 = sum(week1) / len(week1)
-    avg2 = sum(week2) / len(week2)
-    if avg1 == 0:
+
+    this_week_avg = sum(this_week_values) / len(this_week_values)
+    last_week_avg = sum(last_week_values) / len(last_week_values)
+
+    if last_week_avg == 0:
         return None
-    return round(((avg2 - avg1) / avg1) * 100, 2)
+
+    return round(((this_week_avg - last_week_avg) / last_week_avg) * 100, 2)
 
 
 def _weekly_hint(change: Optional[float], meta: dict) -> str:
@@ -158,6 +111,28 @@ def _weekly_hint(change: Optional[float], meta: dict) -> str:
     return f"{change_val:+.2f} 🟢"
 
 
+def _select_metric_of_interest(meta: dict) -> str:
+    moi = meta.get("metric_of_interest")
+    agg = meta.get("agg_type")
+    if isinstance(moi, str) and moi.lower() != "value":
+        return moi
+    if agg:
+        return str(agg)
+    if moi:
+        return str(moi)
+    return "value"
+
+
+def _truncate_text(text: str, max_len: int) -> str:
+    if max_len <= 0:
+        return text
+    if len(text) <= max_len:
+        return text
+    if max_len <= 3:
+        return text[:max_len]
+    return f"{text[: max_len - 3]}..."
+
+
 def _format_table(
     config: str,
     version: str,
@@ -167,18 +142,31 @@ def _format_table(
 ) -> str:
     headers = ["Metric", "Metric_of_interest", "Min", "Max", "Avg", "Weekly Change (%)"]
     formatted_rows: List[List[str]] = []
+    max_metric_len = int(os.getenv("PERF_SUMMARY_MAX_METRIC_LEN", "40"))
+    max_moi_len = int(os.getenv("PERF_SUMMARY_MAX_MOI_LEN", "24"))
     for row in rows:
         weekly = row.get("weekly_change")
         metric_name = row.get("metric", "")
         meta = meta_map.get(metric_name, {})
-        moi = meta.get("metric_of_interest") or meta.get("agg_type") or "value"
-        moi_value = row.get("avg") if row.get("avg") is not None else "n/a"
+        moi = _select_metric_of_interest(meta)
+        # Dynamically select value based on metric of interest
+        moi_key = moi.lower()
+        # Check if moi is a simple stat type that exists in row
+        if moi_key in ("min", "max", "avg") and row.get(moi_key) is not None:
+            moi_value = row.get(moi_key)
+        elif row.get("avg") is not None:
+            # For complex moi (e.g., p99Latency), show the avg of those values
+            moi_value = row.get("avg")
+        else:
+            moi_value = "n/a"
         moi_display = f"{moi} = {moi_value}"
         weekly_display = _weekly_hint(weekly, meta_map.get(metric_name, {}))
+        metric_label = _truncate_text(str(metric_name), max_metric_len)
+        moi_label = _truncate_text(str(moi_display), max_moi_len)
         formatted_rows.append(
             [
-                str(row.get("metric", "n/a")),
-                str(moi_display),
+                metric_label,
+                moi_label,
                 str(row.get("min", "n/a")),
                 str(row.get("max", "n/a")),
                 str(row.get("avg", "n/a")),
@@ -215,70 +203,70 @@ def _format_table(
 
 async def get_configs() -> List[str]:
     """
-    Get list of available Orion configuration files via REST API.
+    Get list of available Orion configuration files via MCP tool.
 
     :return: List of config file names (e.g., ['small-scale-udn-l3.yaml', ...])
     """
-    if _TEST_MODE:
-        logger.info("Test mode enabled: returning mock configs")
-        return _MOCK_CONFIGS
-
-    logger.info("Fetching available configs from orion-mcp REST API")
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(f"{ORION_API_BASE_URL}/api/configs")
-        response.raise_for_status()
-        data = response.json()
-        return data.get("configs", [])
+    logger.info("Fetching available configs from orion-mcp MCP tool")
+    result = await _call_mcp_tool("get_orion_configs", {})
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        configs = result.get("configs")
+        if isinstance(configs, list):
+            return configs
+    return []
 
 
 async def get_metrics(
     config: str, version: Optional[str] = None
 ) -> tuple[List[str], dict]:
     """
-    Get list of available metrics for a specific config via REST API.
+    Get list of available metrics for a specific config via MCP tool.
 
     :param config: Config file name (e.g., 'small-scale-udn-l3.yaml')
     :return: List of metric names
     """
-    if _TEST_MODE:
-        logger.info("Test mode enabled: returning mock metrics")
-        return _mock_metrics_for_config(config), _mock_meta_for_config(config)
-
-    logger.info(f"Fetching metrics for config '{config}' from orion-mcp REST API")
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.get(
-            f"{ORION_API_BASE_URL}/api/metrics",
-            params={
-                "config": config,
-                "include_meta": "1",
-                "version": version or "4.19",
-            },
+    logger.info(f"Fetching metrics for config '{config}' from orion-mcp MCP tool")
+    meta_map: dict[str, Any] = {}
+    metrics_data: Any = []
+    try:
+        result = await _call_mcp_tool(
+            "get_orion_metrics_with_meta",
+            {"config_name": config, "version": version or "4.19"},
         )
-        response.raise_for_status()
-        data = response.json()
-        meta_map: dict[str, Any] = (
-            data.get("meta", {}) if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.warning(
+            "get_orion_metrics_with_meta unavailable, falling back to get_orion_metrics: %s",
+            e,
         )
-        metrics_data: Any = data.get("metrics", []) if isinstance(data, dict) else data
-        if isinstance(metrics_data, list):
-            return metrics_data, meta_map
+        result = await _call_mcp_tool("get_orion_metrics", {"config_name": config})
 
-        # The metrics endpoint returns {metrics: {config_path: [metric1, metric2, ...]}}
-        if isinstance(metrics_data, dict):
-            for config_path, metrics_list in metrics_data.items():
-                if isinstance(metrics_list, list):
-                    return metrics_list, meta_map
+    if isinstance(result, dict) and "metrics" in result:
+        meta_map = (
+            result.get("meta", {}) if isinstance(result.get("meta"), dict) else {}
+        )
+        metrics_data = result.get("metrics", [])
+    else:
+        metrics_data = result
 
-        return [], meta_map
+    if isinstance(metrics_data, list):
+        return metrics_data, meta_map
+
+    # The metrics tool may return {config_path: [metric1, metric2, ...]}
+    if isinstance(metrics_data, dict):
+        for _config_path, metrics_list in metrics_data.items():
+            if isinstance(metrics_list, list):
+                return metrics_list, meta_map
+
+    return [], meta_map
 
 
 async def get_performance_data(
     config: str, metric: str, version: str = "4.19", lookback: int = 14
 ) -> dict:
     """
-    Get performance data for a specific config/metric/version via REST API.
+    Get performance data for a specific config/metric/version via MCP tool.
 
     :param config: Config file name
     :param metric: Metric name
@@ -286,61 +274,69 @@ async def get_performance_data(
     :param lookback: Number of days to look back
     :return: Dict with 'values' list and metadata
     """
-    if _TEST_MODE:
-        if version not in _TEST_VERSIONS:
-            logger.info(
-                "Test mode enabled: no mock data for version '%s' (allowed: %s)",
-                version,
-                sorted(_TEST_VERSIONS),
-            )
-            return {
-                "config": config,
-                "metric": metric,
-                "version": version,
-                "lookback": str(lookback),
-                "values": [],
-                "count": 0,
-                "source": "mock",
-                "error": "no data for version",
-            }
-        logger.info("Test mode enabled: returning mock performance data")
-        values = _mock_series(config, metric, version, lookback)
-        return {
-            "config": config,
-            "metric": metric,
-            "version": version,
-            "lookback": str(lookback),
-            "values": values,
-            "count": len(values),
-            "source": "mock",
-        }
-
     logger.info(
-        f"Fetching performance data: config={config}, metric={metric}, version={version}, lookback={lookback}"
+        "Fetching performance data via MCP: config=%s, metric=%s, version=%s, lookback=%s",
+        config,
+        metric,
+        version,
+        lookback,
     )
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.get(
-            f"{ORION_API_BASE_URL}/api/performance",
-            params={
-                "config": config,
+    try:
+        result = await _call_mcp_tool(
+            "get_orion_performance_data",
+            {
+                "config_name": config,
                 "metric": metric,
                 "version": version,
                 "lookback": str(lookback),
             },
         )
-        if response.status_code == 404:
-            return {
-                "config": config,
+    except Exception as e:
+        logger.warning(
+            "get_orion_performance_data unavailable, falling back to openshift_report_on: %s",
+            e,
+        )
+        result = await _call_mcp_tool(
+            "openshift_report_on",
+            {
+                "versions": version,
                 "metric": metric,
-                "version": version,
+                "config_name": config,
                 "lookback": str(lookback),
-                "values": [],
-                "count": 0,
-                "error": "no data found",
-            }
-        response.raise_for_status()
-        return response.json()
+                "options": "json",
+            },
+        )
+
+    if isinstance(result, dict) and "values" in result:
+        return result
+
+    if isinstance(result, dict) and "data" in result:
+        data = result.get("data", {})
+        version_data = data.get(version)
+        if isinstance(version_data, dict):
+            metric_data = version_data.get(metric, {})
+            values = metric_data.get("value", [])
+            if isinstance(values, list):
+                values = [v for v in values if v is not None]
+                return {
+                    "config": config,
+                    "metric": metric,
+                    "version": version,
+                    "lookback": str(lookback),
+                    "values": values,
+                    "count": len(values),
+                }
+
+    return {
+        "config": config,
+        "metric": metric,
+        "version": version,
+        "lookback": str(lookback),
+        "values": [],
+        "count": 0,
+        "error": "no data found",
+    }
 
 
 def _normalize_list(value: Optional[Any]) -> List[str]:
@@ -373,19 +369,22 @@ async def analyze_performance(
     logger.info(f"analyze_performance called with config={config}, version={version}")
 
     try:
-        # Step 2: Get configs
+        # Step 2: Get configs (use default control plane configs if not specified)
         config_list = _normalize_list(config)
         if config_list:
             configs = config_list
         else:
-            configs = await get_configs()
+            # Use default control plane configs as fallback
+            configs = _DEFAULT_CONTROL_PLANE_CONFIGS
+            logger.info(
+                f"No config specified, using default control plane configs: {configs}"
+            )
 
         # Step 3: Get metrics for each config
         result_parts: List[str] = []
         versions = _normalize_list(version)
         if not versions:
             versions = ["4.19"]
-        lookback_days = 14
 
         for cfg in configs:
             metrics, meta_map = await get_metrics(
@@ -400,14 +399,16 @@ async def analyze_performance(
             for ver in versions:
                 rows: List[dict[str, Any]] = []
                 for metric in metrics_to_show:
-                    perf_data = await get_performance_data(
+                    # Fetch this week's data (last 7 days) for stats display
+                    this_week_data = await get_performance_data(
                         config=cfg,
                         metric=metric,
                         version=ver,
-                        lookback=lookback_days,
+                        lookback=7,
                     )
-                    values = perf_data.get("values", [])
-                    if not values:
+                    this_week_values = this_week_data.get("values", [])
+
+                    if not this_week_values:
                         rows.append(
                             {
                                 "metric": metric,
@@ -419,8 +420,27 @@ async def analyze_performance(
                         )
                         continue
 
-                    stats = _calculate_stats(values)
-                    weekly_change = _calculate_weekly_change(values)
+                    # Fetch last 14 days data to calculate weekly change
+                    two_weeks_data = await get_performance_data(
+                        config=cfg,
+                        metric=metric,
+                        version=ver,
+                        lookback=14,
+                    )
+                    two_weeks_values = two_weeks_data.get("values", [])
+
+                    # Derive last week's values (14 days minus this week)
+                    # Values are ordered, so last_week = values beyond this_week count
+                    this_week_count = len(this_week_values)
+                    if len(two_weeks_values) > this_week_count:
+                        last_week_values = two_weeks_values[this_week_count:]
+                    else:
+                        last_week_values = []
+
+                    stats = _calculate_stats(this_week_values)
+                    weekly_change = _calculate_weekly_change_calendar(
+                        this_week_values, last_week_values
+                    )
                     rows.append(
                         {
                             "metric": metric,
@@ -435,10 +455,30 @@ async def analyze_performance(
                     _format_table(cfg, ver, rows, len(metrics), meta_map)
                 )
 
-        if _TEST_MODE:
-            result_parts.insert(0, "_Using mock data (PERF_SUMMARY_TEST_MODE=true)_")
+        # Split result_parts into multiple messages to avoid Slack's size limit
+        messages: List[str] = []
+        current_message_parts: List[str] = []
+        current_length = 0
 
-        return {"success": True, "message": "\n\n".join(result_parts)}
+        for part in result_parts:
+            part_length = len(part) + 2  # +2 for "\n\n" separator
+            if (
+                current_length + part_length > _SLACK_MESSAGE_LIMIT
+                and current_message_parts
+            ):
+                # Current message would exceed limit, start a new message
+                messages.append("\n\n".join(current_message_parts))
+                current_message_parts = [part]
+                current_length = len(part)
+            else:
+                current_message_parts.append(part)
+                current_length += part_length
+
+        # Don't forget the last message
+        if current_message_parts:
+            messages.append("\n\n".join(current_message_parts))
+
+        return {"success": True, "messages": messages}
     except Exception as e:
         logger.error(f"Error in analyze_performance: {e}", exc_info=True)
         return {"success": False, "message": f"Error: {str(e)}"}

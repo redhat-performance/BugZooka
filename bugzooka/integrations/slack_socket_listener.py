@@ -308,18 +308,26 @@ class SlackSocketListener(SlackClientBase):
                 finally:
                     loop.close()
 
-                # Send the result
-                self.client.chat_postMessage(
-                    channel=channel,
-                    text=result["message"],
-                    thread_ts=ts,
-                )
-
+                # Send the result(s) - may be multiple messages to avoid Slack limit
                 if result["success"]:
-                    self.logger.info(f"✅ Sent performance summary to {user}")
+                    messages = result.get("messages", [])
+                    for msg in messages:
+                        self.client.chat_postMessage(
+                            channel=channel,
+                            text=msg,
+                            thread_ts=ts,
+                        )
+                    self.logger.info(
+                        f"✅ Sent performance summary to {user} ({len(messages)} message(s))"
+                    )
                 else:
+                    self.client.chat_postMessage(
+                        channel=channel,
+                        text=result.get("message", "Unknown error"),
+                        thread_ts=ts,
+                    )
                     self.logger.warning(
-                        f"⚠️ Performance summary failed: {result['message']}"
+                        f"⚠️ Performance summary failed: {result.get('message')}"
                     )
 
             except Exception as e:
