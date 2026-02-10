@@ -20,7 +20,10 @@ from bugzooka.core.config import (
 )
 from bugzooka.analysis.pr_analyzer import analyze_pr_with_gemini
 from bugzooka.analysis.nightly_regression_analyzer import analyze_nightly_regression
-from bugzooka.analysis.perf_summary_analyzer import analyze_performance
+from bugzooka.analysis.perf_summary_analyzer import (
+    analyze_performance,
+    parse_perf_summary_args,
+)
 from bugzooka.integrations.slack_client_base import SlackClientBase
 
 
@@ -61,55 +64,6 @@ class SlackSocketListener(SlackClientBase):
         # Track messages being processed to avoid duplicates
         self.processing_lock = Lock()
         self.processing_messages: Set[str] = set()
-
-    def _parse_perf_summary_args(self, text: str) -> tuple:
-        """
-        Parse optional configs and versions from performance summary message.
-        Expected format: "@bot performance summary [config.yaml ...] [version ...]"
-
-        :param text: Message text
-        :return: Tuple of (configs, versions) - both can be empty lists
-        """
-        import re
-
-        # Remove bot mention and normalize
-        # Pattern: anything before "performance summary", then optional args
-        text_lower = text.lower()
-
-        # Find where "performance summary" ends
-        match = re.search(r"performance\s+summary\s*(.*)", text_lower)
-        if not match:
-            return [], []
-
-        args_text = match.group(1).strip()
-        if not args_text:
-            return [], []
-
-        # Split remaining text into potential args (handle commas)
-        parts = args_text.replace(",", " ").split()
-
-        configs = []
-        versions = []
-        seen_configs = set()
-        seen_versions = set()
-
-        for part in parts:
-            token = part.strip()
-            if not token:
-                continue
-            # Config files end with .yaml
-            if token.endswith(".yaml"):
-                if token not in seen_configs:
-                    configs.append(token)
-                    seen_configs.add(token)
-            # Config files end with .yaml
-            # Version looks like X.XX (e.g., 4.19)
-            elif re.match(r"^\d+\.\d+$", token):
-                if token not in seen_versions:
-                    versions.append(token)
-                    seen_versions.add(token)
-
-        return configs, versions
 
     def _should_process_message(self, event: Dict[str, Any]) -> bool:
         """
@@ -294,16 +248,27 @@ class SlackSocketListener(SlackClientBase):
                     thread_ts=ts,
                 )
 
-                # Parse optional configs and versions from the message
-                # Expected format: "performance summary [config ...] [version ...]"
-                configs, versions = self._parse_perf_summary_args(text)
+                # Parse configs, versions, lookback days, and verbose flag
+                (
+                    configs,
+                    versions,
+                    lookback_days,
+                    verbose,
+                    use_all_configs,
+                ) = parse_perf_summary_args(text)
 
                 # Run async function in sync context
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
                     result = loop.run_until_complete(
-                        analyze_performance(configs, versions)
+                        analyze_performance(
+                            configs,
+                            versions,
+                            lookback_days=lookback_days,
+                            verbose=verbose,
+                            use_all_configs=use_all_configs,
+                        )
                     )
                 finally:
                     loop.close()
@@ -349,7 +314,7 @@ class SlackSocketListener(SlackClientBase):
                 ":bulb: *Tips:*\n"
                 "- `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` - PR performance analysis\n"
                 "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis\n"
-                "- `performance summary [config.yaml ...] [version ...]` - Performance metrics summary",
+                "- `performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...] [verbose]` - Performance metrics summary",
                 thread_ts=ts,
             )
             self.logger.info(f"✅ Sent greeting to {user}")

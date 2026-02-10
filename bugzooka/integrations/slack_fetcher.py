@@ -1,3 +1,4 @@
+import asyncio
 import io
 import time
 import re
@@ -17,6 +18,10 @@ from bugzooka.analysis.log_analyzer import (
     download_and_analyze_logs,
     filter_errors_with_llm,
     run_agent_analysis,
+)
+from bugzooka.analysis.perf_summary_analyzer import (
+    analyze_performance,
+    parse_perf_summary_args,
 )
 from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
@@ -440,6 +445,82 @@ class SlackMessageFetcher(SlackClientBase):
             return ts
 
         # No weekly trigger; dynamic summarize only
+
+        # Performance summary trigger (polling mode)
+        if "performance summary" in text_lower:
+            try:
+                self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    text="📊 Gathering performance summary... This may take a moment.",
+                    thread_ts=ts,
+                )
+
+                (
+                    configs,
+                    versions,
+                    lookback_days,
+                    verbose,
+                    use_all_configs,
+                ) = parse_perf_summary_args(text)
+                self.logger.info(
+                    "Triggering performance summary via polling: lookback_days=%s, versions=%s, configs=%s, verbose=%s, use_all_configs=%s",
+                    lookback_days,
+                    versions,
+                    configs,
+                    verbose,
+                    use_all_configs,
+                )
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(
+                        analyze_performance(
+                            configs,
+                            versions,
+                            lookback_days=lookback_days,
+                            verbose=verbose,
+                            use_all_configs=use_all_configs,
+                        )
+                    )
+                finally:
+                    loop.close()
+
+                if result.get("success"):
+                    messages = result.get("messages", [])
+                    for msg in messages:
+                        self.client.chat_postMessage(
+                            channel=self.channel_id,
+                            text=msg,
+                            thread_ts=ts,
+                        )
+                    self.logger.info(
+                        "✅ Sent performance summary via polling (%s message(s))",
+                        len(messages),
+                    )
+                else:
+                    self.client.chat_postMessage(
+                        channel=self.channel_id,
+                        text=result.get("message", "Unknown error"),
+                        thread_ts=ts,
+                    )
+                    self.logger.warning(
+                        "⚠️ Performance summary failed: %s",
+                        result.get("message"),
+                    )
+
+            except Exception as e:
+                self.logger.error(
+                    "Error processing performance summary in polling mode: %s",
+                    e,
+                    exc_info=True,
+                )
+                self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    text=f"❌ Unexpected error: {str(e)}",
+                    thread_ts=ts,
+                )
+            return ts
 
         if "failure" not in text_lower:
             self.logger.info("Not a failure job, skipping")
