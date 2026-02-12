@@ -17,10 +17,13 @@ logger = logging.getLogger(__name__)
 
 # Default control plane configs used when user doesn't specify a config
 _DEFAULT_CONTROL_PLANE_CONFIGS = [
-    "okd-control-plane-cluster-density.yaml",
-    "okd-control-plane-node-density.yaml",
-    "okd-control-plane-node-density-cni.yaml",
-    "okd-control-plane-crd-scale.yaml",
+    "metal-perfscale-cpt-virt-udn-density.yaml",
+    "trt-external-payload-cluster-density.yaml",
+    "trt-external-payload-node-density.yaml",
+    "trt-external-payload-node-density-cni.yaml",
+    "trt-external-payload-crd-scale.yaml",
+    "small-scale-udn-l3.yaml",
+    "med-scale-udn-l3.yaml",
 ]
 
 # Fallback list used when MCP config list is unavailable and ALL is requested
@@ -104,7 +107,7 @@ def _calculate_stats(values: List[float]) -> dict:
     }
 
 
-def _calculate_period_change(
+def _calculate_percentage_change(
     current_values: List[float], previous_values: List[float]
 ) -> Optional[float]:
     """
@@ -623,7 +626,7 @@ async def analyze_performance(
                         previous_period_values = []
 
                     stats = _calculate_stats(this_period_values)
-                    change = _calculate_period_change(
+                    change = _calculate_percentage_change(
                         this_period_values, previous_period_values
                     )
                     row = {
