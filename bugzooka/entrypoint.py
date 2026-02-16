@@ -52,7 +52,10 @@ def main() -> None:
     }
 
     fetcher = SlackMessageFetcher(
-        channel_id=SLACK_CHANNEL_ID, logger=logger, poll_interval=SLACK_POLL_INTERVAL
+        channel_id=SLACK_CHANNEL_ID,
+        logger=logger,
+        poll_interval=SLACK_POLL_INTERVAL,
+        enable_socket_mode=args.enable_socket_mode,
     )
 
     listener = None
