@@ -70,6 +70,10 @@ _ALL_CONFIGS_FALLBACK = [
     "trt-external-payload-node-density.yaml",
 ]
 
+# Default OpenShift versions used when none provided
+_DEFAULT_VERSION = "4.19"
+_DEFAULT_VERSIONS = [_DEFAULT_VERSION]
+
 # Slack message size limit (actual is ~4000, use 3500 to be safe)
 _SLACK_MESSAGE_LIMIT = int(os.getenv("PERF_SUMMARY_SLACK_MSG_LIMIT", "3500"))
 
@@ -132,10 +136,7 @@ def _calculate_percentage_change(
 def _change_hint(change: Optional[float], meta: dict) -> str:
     if change is None:
         return "n/a"
-    try:
-        change_val = float(change)
-    except (TypeError, ValueError):
-        return "n/a"
+    change_val = change
 
     direction = meta.get("direction")
     threshold = meta.get("threshold")
@@ -168,6 +169,23 @@ def _truncate_text(text: str, max_len: int) -> str:
     return f"{text[: max_len - 3]}..."
 
 
+def _render_table(headers: List[str], formatted_rows: List[List[str]]) -> str:
+    col_widths = [len(h) for h in headers]
+    for formatted_row in formatted_rows:
+        for i, value in enumerate(formatted_row):
+            col_widths[i] = max(col_widths[i], len(str(value)))
+
+    header_line = " | ".join(h.ljust(col_widths[i]) for i, h in enumerate(headers))
+    sep_line = "-+-".join("-" * col_widths[i] for i in range(len(headers)))
+    row_lines = [
+        " | ".join(
+            str(value).ljust(col_widths[i]) for i, value in enumerate(formatted_row)
+        )
+        for formatted_row in formatted_rows
+    ]
+    return "\n".join([header_line, sep_line, *row_lines])
+
+
 def _format_config_table(
     config: str,
     version: str,
@@ -191,20 +209,7 @@ def _format_config_table(
             ]
         )
 
-    col_widths = [len(h) for h in headers]
-    for formatted_row in formatted_rows:
-        for i, value in enumerate(formatted_row):
-            col_widths[i] = max(col_widths[i], len(str(value)))
-
-    header_line = " | ".join(h.ljust(col_widths[i]) for i, h in enumerate(headers))
-    sep_line = "-+-".join("-" * col_widths[i] for i in range(len(headers)))
-    row_lines = [
-        " | ".join(
-            str(value).ljust(col_widths[i]) for i, value in enumerate(formatted_row)
-        )
-        for formatted_row in formatted_rows
-    ]
-
+    table_body = _render_table(headers, formatted_rows)
     metrics_note = (
         f"showing {len(rows)} of {total_metrics} metrics, "
         f"last {lookback_days}d vs prior {lookback_days}d"
@@ -213,9 +218,7 @@ def _format_config_table(
         [
             f"*Config: {config}* (Version: {version}, {metrics_note})",
             "```",
-            header_line,
-            sep_line,
-            *row_lines,
+            table_body,
             "```",
         ]
     )
@@ -247,20 +250,7 @@ def _format_summary_table(
             ]
         )
 
-    col_widths = [len(h) for h in headers]
-    for formatted_row in formatted_rows:
-        for i, value in enumerate(formatted_row):
-            col_widths[i] = max(col_widths[i], len(str(value)))
-
-    header_line = " | ".join(h.ljust(col_widths[i]) for i, h in enumerate(headers))
-    sep_line = "-+-".join("-" * col_widths[i] for i in range(len(headers)))
-    row_lines = [
-        " | ".join(
-            str(value).ljust(col_widths[i]) for i, value in enumerate(formatted_row)
-        )
-        for formatted_row in formatted_rows
-    ]
-
+    table_body = _render_table(headers, formatted_rows)
     metrics_note = (
         f"top {len(rows)} of {total_metrics} metrics, "
         f"last {lookback_days}d vs prior {lookback_days}d"
@@ -269,9 +259,7 @@ def _format_summary_table(
         [
             f"*Top {limit} Changes* (Version: {version}, {metrics_note})",
             "```",
-            header_line,
-            sep_line,
-            *row_lines,
+            table_body,
             "```",
         ]
     )
@@ -306,17 +294,21 @@ async def get_metrics(
     logger.info(f"Fetching metrics for config '{config}' from orion-mcp MCP tool")
     meta_map: dict[str, Any] = {}
     metrics_data: Any = []
+    effective_version = version or _DEFAULT_VERSION
     try:
         result = await _call_mcp_tool(
             "get_orion_metrics_with_meta",
-            {"config_name": config, "version": version or "4.19"},
+            {"config_name": config, "version": effective_version},
         )
     except Exception as e:
         logger.warning(
             "get_orion_metrics_with_meta unavailable, falling back to get_orion_metrics: %s",
             e,
         )
-        result = await _call_mcp_tool("get_orion_metrics", {"config_name": config})
+        result = await _call_mcp_tool(
+            "get_orion_metrics",
+            {"config_name": config, "version": effective_version},
+        )
 
     if isinstance(result, dict) and "metrics" in result:
         meta_map = (
@@ -339,7 +331,7 @@ async def get_metrics(
 
 
 async def get_performance_data(
-    config: str, metric: str, version: str = "4.19", lookback: int = 14
+    config: str, metric: str, version: str = _DEFAULT_VERSION, lookback: int = 14
 ) -> dict:
     """
     Get performance data for a specific config/metric/version via MCP tool.
@@ -413,21 +405,6 @@ async def get_performance_data(
         "count": 0,
         "error": "no data found",
     }
-
-
-def _normalize_list(value: Optional[Any]) -> List[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(v) for v in value if str(v).strip()]
-    if isinstance(value, tuple):
-        return [str(v) for v in value if str(v).strip()]
-    text = str(value).strip()
-    if not text:
-        return []
-    if "," in text:
-        return [part.strip() for part in text.split(",") if part.strip()]
-    return [text]
 
 
 def parse_perf_summary_args(
@@ -510,8 +487,8 @@ def parse_perf_summary_args(
 
 
 async def analyze_performance(
-    config: Optional[Any] = None,
-    version: Optional[Any] = None,
+    configs: Optional[List[str]] = None,
+    versions: Optional[List[str]] = None,
     lookback_days: Optional[int] = None,
     verbose: bool = False,
     use_all_configs: bool = False,
@@ -519,18 +496,20 @@ async def analyze_performance(
     """
     Analyze performance metrics for the specified config and version.
 
-    :param config: Optional config file name (e.g., 'small-scale-udn-l3.yaml')
-                   If None, analyzes all available configs.
-    :param version: Optional OpenShift version (e.g., '4.19')
-                    If None, uses default version.
+    :param configs: Optional list of config file names
+                   (e.g., ['small-scale-udn-l3.yaml']).
+                   If None or empty, uses defaults (or ALL if requested).
+    :param versions: Optional list of OpenShift versions
+                    (defaults to [_DEFAULT_VERSION] when empty).
+                    If None or empty, uses default version.
     :param lookback_days: Lookback period in days for stats and change calculation
     :param verbose: If True, show per-config tables; otherwise show top changes summary
     :return: Dict with 'success' boolean and 'message' string
     """
     logger.info(
-        "analyze_performance called with config=%s, version=%s, lookback_days=%s, verbose=%s, use_all_configs=%s",
-        config,
-        version,
+        "analyze_performance called with configs=%s, versions=%s, lookback_days=%s, verbose=%s, use_all_configs=%s",
+        configs,
+        versions,
         lookback_days,
         verbose,
         use_all_configs,
@@ -538,7 +517,7 @@ async def analyze_performance(
 
     try:
         # Step 2: Get configs (default to control plane configs unless ALL requested)
-        config_list = _normalize_list(config)
+        requested_configs = list(configs or [])
         if use_all_configs:
             configs = await get_configs()
             if configs:
@@ -549,8 +528,8 @@ async def analyze_performance(
                     "No configs returned from MCP, using fallback ALL list: %s",
                     configs,
                 )
-        elif config_list:
-            configs = config_list
+        elif requested_configs:
+            configs = requested_configs
         else:
             configs = _DEFAULT_CONTROL_PLANE_CONFIGS
             logger.info(
@@ -563,22 +542,21 @@ async def analyze_performance(
             lookback_days = int(os.getenv("PERF_SUMMARY_LOOKBACK_DAYS", "14"))
         if lookback_days <= 0:
             lookback_days = 14
-        lookback_period = lookback_days
         lookback_window = lookback_days * 2
 
         # Step 4: Get metrics for each config
         result_parts: List[str] = []
-        versions = _normalize_list(version)
-        if not versions:
-            versions = ["4.19"]
+        requested_versions = list(versions or [])
+        if not requested_versions:
+            versions = list(_DEFAULT_VERSIONS)
+        else:
+            versions = requested_versions
         missing_configs: List[str] = []
         aggregated_rows: dict[str, List[dict[str, Any]]] = {ver: [] for ver in versions}
         total_metrics = 0
 
         for cfg in configs:
-            metrics, meta_map = await get_metrics(
-                cfg, versions[0] if versions else None
-            )
+            metrics, meta_map = await get_metrics(cfg, versions[0])
             if not metrics:
                 missing_configs.append(cfg)
                 continue
@@ -593,7 +571,7 @@ async def analyze_performance(
                         config=cfg,
                         metric=metric,
                         version=ver,
-                        lookback=lookback_period,
+                        lookback=lookback_days,
                     )
                     this_period_values = this_period_data.get("values", [])
 
