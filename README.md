@@ -99,6 +99,20 @@ Mention the bot in Slack with the following format:
 ```
 For local testing, see [Orion-MCP](https://github.com/jtaleric/orion-mcp) for instructions on how to run orion-mcp.
 
+### **Supported Bot Triggers**
+#### **Job Summary**
+* `summarize Nd` - Job summary for N number of days.
+* `summarize Nd verbose` - Job summary for N number of days with more verbosity.
+#### **PR Analysis**
+* `@PerfScale Jedi analyze pr: https://github.com/openshift/ovn-kubernetes/pull/2924, compare with 4.20` - Analyses performance of PR w.r.t specified openshift version.
+#### **Nightly Regression Inspection**
+* `@PerfScale Jedi inspect 4.22.0-0.nightly-2026-01-05-203335` - Calls `has_nightly_regressed` tool in [orion-mcp](https://github.com/cloud-bulldozer/orion-mcp) for a given nightly. Default lookback period is 15 days.
+* `@PerfScale Jedi inspect 4.22.0-0.nightly-2026-01-05-203335 for N days` - Calls `has_nightly_regressed` tool in [orion-mcp](https://github.com/cloud-bulldozer/orion-mcp) for a given nightly for previous N number of days.
+* `@PerfScale Jedi inspect 4.22.0-0.nightly-2026-01-05-203335 vs 4.22.0-0.nightly-2026-01-01-123456` - Calls `has_nightly_regressed` tool in [orion-mcp](https://github.com/cloud-bulldozer/orion-mcp) and campares two given nightlies.
+* `@PerfScale Jedi inspect 4.22.0-0.nightly-2026-01-05-203335 for config trt-external-payload-node-density.yaml` - Calls `has_nightly_regressed` tool in [orion-mcp](https://github.com/cloud-bulldozer/orion-mcp) for a given nightly checks regression only for a given orion configuration file instead of the [default](https://github.com/cloud-bulldozer/orion-mcp/blob/main/orion_mcp.py#L470).
+
+**Note**: All the triggers that start with a bot mention (.i.e. `@PerfScale Jedi`) run in socket mode. All socket mode features can be used in any slack channel without needing to host your own on premise openshift deployment.
+
 ## **Configurables**
 This tool monitors a slack channel and uses AI to provide replies to CI failure messages. Also it operates as a singleton instance.
 
