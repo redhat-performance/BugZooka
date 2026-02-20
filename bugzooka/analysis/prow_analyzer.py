@@ -60,19 +60,50 @@ def scan_orion_jsons(directory_path):
     return []
 
 
-def categorize_prow_failure(step_name, step_phase):
+def _trim_job_prefix(step_name, job_name):
+    """
+    Remove the redundant job test-identifier prefix from the step name.
+
+    The step name often starts with the job's test identifier (a suffix of the
+    job name).  E.g. job "...-aws-4.22-nightly-x86-payload-control-plane-6nodes"
+    produces step "payload-control-plane-6nodes-openshift-qe-orion-udn-l3".
+    This function strips the overlapping prefix to yield "openshift-qe-orion-udn-l3".
+
+    :param step_name: lowered step name
+    :param job_name: full job name
+    :return: trimmed step name
+    """
+    if not job_name:
+        return step_name
+    job_parts = job_name.lower().split("-")
+    for i in range(len(job_parts)):
+        suffix = "-".join(job_parts[i:])
+        if step_name.startswith(suffix + "-"):
+            trimmed = step_name[len(suffix) + 1 :]
+            if trimmed:
+                return trimmed
+            break
+    return step_name
+
+
+def categorize_prow_failure(step_name, step_phase, job_name=""):
     """
     Categorize prow failures.
 
     :param step_name: step name
     :param step_phase: step phase
+    :param job_name: full job name used to strip redundant prefixes
     :return: categorized preview tag message
     """
-    step_name = step_name.lower()
+    step_name = _trim_job_prefix(step_name.lower(), job_name)
+    step_name = re.sub(r"-?[Xx]{3,}-?", "-", step_name).strip("-")
 
     for keyword, (_, description) in FAILURE_KEYWORDS.items():
         if keyword in step_name:
-            return f"{step_phase} phase: {description}"
+            short_name = step_name[step_name.index(keyword) :]
+            if len(short_name) > len(keyword) + 1:
+                return f"{step_phase} phase: {short_name} failure"
+            return f"{step_phase} phase: {step_name} failure"
 
     return f"{step_phase} phase: {step_name} step failure"
 
@@ -130,9 +161,13 @@ def analyze_prow_artifacts(directory_path, job_name):
                 e,
             )
         if step_name and step_phase:
-            categorization_message = categorize_prow_failure(step_name, step_phase)
+            categorization_message = categorize_prow_failure(
+                step_name, step_phase, job_name
+            )
         else:
-            categorization_message = categorize_prow_failure(matched_line, "unknown")
+            categorization_message = categorize_prow_failure(
+                matched_line, "unknown", job_name
+            )
             step_summary = ""
     cluster_operators_file_path = os.path.join(directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):

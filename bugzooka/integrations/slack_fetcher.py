@@ -209,13 +209,20 @@ class SlackMessageFetcher(SlackClientBase):
         """Send error logs preview to Slack (either as message or file)."""
         errors_log_preview = "\n".join(errors_list or [])[:MAX_PREVIEW_CONTENT]
         errors_list_string = "\n".join(errors_list or [])[:MAX_CONTEXT_SIZE]
+        display_tag = re.sub(r"openshift-qe[\s-]?", "", categorization_message)
+
+        # Build a clean header: failure reason first, then error logs preview
+        parts = display_tag.split(" phase: ", 1)
+        failure_desc = parts[1].strip() if len(parts) == 2 else display_tag
+        header_text = (
+            f":red_circle: *{failure_desc}* :red_circle:\n\n" f"Error Logs Preview"
+        )
 
         if len(errors_list_string) > MAX_PREVIEW_CONTENT:
             preview_message = (
-                f":checking: *Error Logs Preview ({categorization_message})*\n"
-                "Here are the first few lines of the error log:\n"
+                f"{header_text}\n"
                 f"```{errors_log_preview.strip()}```\n"
-                "_(Log preview truncated. Full log attached below.)_"
+                "_(Full log attached below.)_"
             )
             self.logger.info("📤 Uploading full error log with preview message")
             log_bytes = io.BytesIO(errors_list_string.strip().encode("utf-8"))
@@ -227,10 +234,11 @@ class SlackMessageFetcher(SlackClientBase):
                 thread_ts=max_ts,
                 initial_comment=preview_message,
             )
+            time.sleep(2)
         else:
             self.logger.info("📤 Trying to just send the preview message")
             message_block = self.get_slack_message_blocks(
-                markdown_header=f":checking: *Error Logs Preview ({categorization_message})*\n",
+                markdown_header=f"{header_text}\n",
                 content_text=f"{errors_log_preview.strip()}",
             )
             self.client.chat_postMessage(
