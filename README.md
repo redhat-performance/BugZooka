@@ -99,6 +99,29 @@ Mention the bot in Slack with the following format:
 ```
 For local testing, see [Orion-MCP](https://github.com/jtaleric/orion-mcp) for instructions on how to run orion-mcp.
 
+#### **Performance Summary (Orion-MCP)**
+
+BugZooka can generate a configurable performance summary across metrics for one or more configs and versions. This feature requires the **orion-mcp server** to be reachable via `mcp_config.json`.
+
+**Usage:**
+```
+@BugZooka performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...] [verbose]
+```
+
+**Examples:**
+```
+@BugZooka performance summary 14d
+@BugZooka performance summary 30d ALL verbose
+@BugZooka performance summary 7d trt-external-payload-node-density.yaml 4.19
+```
+
+**Notes:**
+- If no config is provided, defaults to a curated control-plane config list.
+- `ALL` uses all available Orion configs (fallback list is used if MCP is unavailable).
+- Multiple versions can be provided (e.g. `4.19 4.20`).
+- When Socket Mode is enabled, the polling handler skips `performance summary` to avoid duplicate replies.
+- Without the verbose option, the default is ranking the top 15 most influential metrics with visual hints.
+
 ## **Configurables**
 This tool monitors a slack channel and uses AI to provide replies to CI failure messages. Also it operates as a singleton instance.
 
@@ -108,6 +131,7 @@ All secrets are passed using a `.env` file which is located in the root director
 ### Mandatory fields
 SLACK_BOT_TOKEN="YOUR_SLACK_BOT_TOKEN"
 SLACK_CHANNEL_ID="YOUR_SLACK_CHANNEL_ID"
+JEDI_BOT_SLACK_USER_ID="YOUR_BOT_USER_ID"
 
 ### Optional for Socket Mode (required only when using --enable-socket-mode)
 SLACK_APP_TOKEN="YOUR_SLACK_APP_TOKEN"  # App-level token (xapp-*) for WebSocket mode
@@ -129,6 +153,12 @@ INFERENCE_API_RETRY_MAX_ATTEMPTS="3"         # Max retry attempts (default: 3)
 INFERENCE_API_RETRY_DELAY="5.0"              # Initial retry delay in seconds (default: 5.0)
 INFERENCE_API_RETRY_BACKOFF_MULTIPLIER="2.0" # Exponential backoff multiplier (default: 2.0)
 INFERENCE_API_RETRY_MAX_DELAY="60.0"         # Max retry delay in seconds (default: 60.0)
+
+### Performance Summary (optional)
+PERF_SUMMARY_LOOKBACK_DAYS="14"              # Default lookback window for perf summary
+PERF_SUMMARY_MAX_METRIC_LEN="40"             # Truncation length for metric labels
+PERF_SUMMARY_MAX_CONFIG_LEN="25"             # Truncation length for config labels
+PERF_SUMMARY_SLACK_MSG_LIMIT="3500"          # Slack message size safety cap
 ```
 **Note**: The inference client works with any OpenAI-compatible API endpoint. Make sure to provide the mandatory Slack and inference configuration.
 
