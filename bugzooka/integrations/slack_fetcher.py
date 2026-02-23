@@ -21,6 +21,7 @@ from bugzooka.analysis.log_analyzer import (
 from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
     build_summary_sections,
+    construct_visualization_url,
 )
 from bugzooka.analysis.prompts import RAG_AWARE_PROMPT
 from bugzooka.integrations.inference_client import (
@@ -203,17 +204,19 @@ class SlackMessageFetcher(SlackClientBase):
                 )
         return new_messages
 
+    def _get_failure_desc(self, categorization_message):
+        """Extract the failure description from a categorization message for display."""
+        display_tag = re.sub(r"openshift-qe[\s-]?", "", categorization_message)
+        parts = display_tag.split(" phase: ", 1)
+        return parts[1].strip() if len(parts) == 2 else display_tag
+
     def _send_error_logs_preview(
         self, errors_list, categorization_message, max_ts, is_install_issue=False
     ):
         """Send error logs preview to Slack (either as message or file)."""
         errors_log_preview = "\n".join(errors_list or [])[:MAX_PREVIEW_CONTENT]
         errors_list_string = "\n".join(errors_list or [])[:MAX_CONTEXT_SIZE]
-        display_tag = re.sub(r"openshift-qe[\s-]?", "", categorization_message)
-
-        # Build a clean header: failure reason first, then error logs preview
-        parts = display_tag.split(" phase: ", 1)
-        failure_desc = parts[1].strip() if len(parts) == 2 else display_tag
+        failure_desc = self._get_failure_desc(categorization_message)
         header_text = (
             f":red_circle: *{failure_desc}* :red_circle:\n\n" f"Error Logs Preview"
         )
@@ -263,6 +266,23 @@ class SlackMessageFetcher(SlackClientBase):
                 blocks=message_block,
                 thread_ts=max_ts,
             )
+
+    def _send_changepoint_link(self, viz_url, categorization_message, max_ts):
+        """Post a link to the changepoint visualization instead of error logs."""
+        failure_desc = self._get_failure_desc(categorization_message)
+        header = f":red_circle: *{failure_desc}* :red_circle:\n"
+        link = f"<{viz_url}|View Changepoint Visualization>"
+        message_block = self.get_slack_message_blocks(
+            markdown_header=header,
+            content_text=link,
+            use_markdown=True,
+        )
+        self.client.chat_postMessage(
+            channel=self.channel_id,
+            text="Changepoint Visualization",
+            blocks=message_block,
+            thread_ts=max_ts,
+        )
 
     def _send_analysis_result(self, response, max_ts):
         """Send the final analysis result to Slack."""
@@ -366,6 +386,7 @@ class SlackMessageFetcher(SlackClientBase):
                         categorization_message,
                         _requires_llm,
                         is_install_issue,
+                        _step_name,
                     ) = analysis
                     if errors_list is None:
                         category = "unknown"
@@ -459,14 +480,28 @@ class SlackMessageFetcher(SlackClientBase):
             categorization_message,
             requires_llm,
             is_install_issue,
+            step_name,
         ) = download_and_analyze_logs(text)
         if errors_list is None:
             return ts
 
-        # Send error logs preview first
-        self._send_error_logs_preview(
-            errors_list, categorization_message, ts, is_install_issue
-        )
+        # For orion/changepoint failures, show visualization link instead of error logs
+        is_changepoint = "orion" in (categorization_message or "").lower()
+        if is_changepoint and step_name:
+            view_url, _ = extract_job_details(text)
+            viz_url = (
+                construct_visualization_url(view_url, step_name) if view_url else None
+            )
+            if viz_url:
+                self._send_changepoint_link(viz_url, categorization_message, ts)
+            else:
+                self._send_error_logs_preview(
+                    errors_list, categorization_message, ts, is_install_issue
+                )
+        else:
+            self._send_error_logs_preview(
+                errors_list, categorization_message, ts, is_install_issue
+            )
 
         # Add job-history info in the thread after the preview
         self._handle_job_history(thread_ts=ts, current_message=msg)

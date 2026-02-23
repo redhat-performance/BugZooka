@@ -114,7 +114,7 @@ def analyze_prow_artifacts(directory_path, job_name):
 
     :param directory_path: directory path for the artifacts
     :param job_name: job name to base line with
-    :return: tuple of (list of errors, categorization_message, requires_llm, is_install_issue)
+    :return: tuple of (errors, categorization_message, requires_llm, is_install_issue, step_name)
     """
     step_summary = ""
     categorization_message = ""
@@ -129,6 +129,7 @@ def analyze_prow_artifacts(directory_path, job_name):
             MAINTENANCE_ISSUE,
             False,
             True,
+            None,
         )
     with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
         matched_line = next(
@@ -143,7 +144,7 @@ def analyze_prow_artifacts(directory_path, job_name):
             matched_line = (
                 "Couldn't identify the failure step, likely a maintanence issue"
             )
-            return [matched_line], MAINTENANCE_ISSUE, False, True
+            return [matched_line], MAINTENANCE_ISSUE, False, True, None
     junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
     # Defaults in case XML parsing yields no values
     step_phase, step_name, step_summary = None, None, ""
@@ -182,6 +183,7 @@ def analyze_prow_artifacts(directory_path, job_name):
             categorization_message,
             False,
             False,
+            step_name,
         )
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
@@ -194,16 +196,19 @@ def analyze_prow_artifacts(directory_path, job_name):
                 categorization_message,
                 True,
                 False,
+                step_name,
             )
         return (
             [matched_line + "\n"] + orion_errors,
             categorization_message,
             False,
             False,
+            step_name,
         )
     return (
         [matched_line + "\n"] + cluster_operator_errors,
         categorization_message,
         False,
         False,
+        step_name,
     )

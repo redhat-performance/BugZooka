@@ -129,7 +129,7 @@ def download_and_analyze_logs(text):
     """Extract job details, download and analyze logs."""
     job_url, job_name = extract_job_details(text)
     if job_url is None or job_name is None:
-        return None, None, None, None
+        return None, None, None, None, None
     directory_path = download_prow_logs(job_url)
     return analyze_prow_artifacts(directory_path, job_name)
 
