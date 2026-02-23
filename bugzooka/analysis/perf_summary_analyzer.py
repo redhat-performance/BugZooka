@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from bugzooka.integrations.mcp_client import (
@@ -76,6 +77,20 @@ _DEFAULT_VERSIONS = [_DEFAULT_VERSION]
 
 # Slack message size limit (actual is ~4000, use 3500 to be safe)
 _SLACK_MESSAGE_LIMIT = int(os.getenv("PERF_SUMMARY_SLACK_MSG_LIMIT", "3500"))
+
+
+@dataclass(frozen=True)
+class PerformanceData:
+    config: str
+    metric: str
+    version: str
+    lookback: int
+    values: List[float]
+    error: Optional[str] = None
+
+    @property
+    def count(self) -> int:
+        return len(self.values)
 
 
 def _coerce_mcp_result(result: Any) -> Any:
@@ -186,6 +201,53 @@ def _render_table(headers: List[str], formatted_rows: List[List[str]]) -> str:
     return "\n".join([header_line, sep_line, *row_lines])
 
 
+def _format_metrics_table(
+    *,
+    title: str,
+    version: str,
+    rows: List[dict],
+    total_metrics: int,
+    lookback_days: int,
+    include_config: bool,
+    note_prefix: str,
+) -> str:
+    headers = ["Metric", "Min", "Max", "Avg", "Change (%)"]
+    if include_config:
+        headers = ["Config", *headers]
+
+    formatted_rows: List[List[str]] = []
+    max_metric_len = int(os.getenv("PERF_SUMMARY_MAX_METRIC_LEN", "40"))
+    max_config_len = int(os.getenv("PERF_SUMMARY_MAX_CONFIG_LEN", "25"))
+    for row in rows:
+        change_display = _change_hint(row.get("change"), row.get("meta", {}))
+        metric_label = _truncate_text(str(row.get("metric", "")), max_metric_len)
+        row_values = [
+            metric_label,
+            str(row.get("min", "n/a")),
+            str(row.get("max", "n/a")),
+            str(row.get("avg", "n/a")),
+            str(change_display),
+        ]
+        if include_config:
+            config_label = _truncate_text(str(row.get("config", "")), max_config_len)
+            row_values = [config_label, *row_values]
+        formatted_rows.append(row_values)
+
+    table_body = _render_table(headers, formatted_rows)
+    metrics_note = (
+        f"{note_prefix} {len(rows)} of {total_metrics} metrics, "
+        f"last {lookback_days}d vs prior {lookback_days}d"
+    )
+    return "\n".join(
+        [
+            f"{title} (Version: {version}, {metrics_note})",
+            "```",
+            table_body,
+            "```",
+        ]
+    )
+
+
 def _format_config_table(
     config: str,
     version: str,
@@ -193,34 +255,14 @@ def _format_config_table(
     total_metrics: int,
     lookback_days: int,
 ) -> str:
-    headers = ["Metric", "Min", "Max", "Avg", "Change (%)"]
-    formatted_rows: List[List[str]] = []
-    max_metric_len = int(os.getenv("PERF_SUMMARY_MAX_METRIC_LEN", "40"))
-    for row in rows:
-        change_display = _change_hint(row.get("change"), row.get("meta", {}))
-        metric_label = _truncate_text(str(row.get("metric", "")), max_metric_len)
-        formatted_rows.append(
-            [
-                metric_label,
-                str(row.get("min", "n/a")),
-                str(row.get("max", "n/a")),
-                str(row.get("avg", "n/a")),
-                str(change_display),
-            ]
-        )
-
-    table_body = _render_table(headers, formatted_rows)
-    metrics_note = (
-        f"showing {len(rows)} of {total_metrics} metrics, "
-        f"last {lookback_days}d vs prior {lookback_days}d"
-    )
-    return "\n".join(
-        [
-            f"*Config: {config}* (Version: {version}, {metrics_note})",
-            "```",
-            table_body,
-            "```",
-        ]
+    return _format_metrics_table(
+        title=f"*Config: {config}*",
+        version=version,
+        rows=rows,
+        total_metrics=total_metrics,
+        lookback_days=lookback_days,
+        include_config=False,
+        note_prefix="showing",
     )
 
 
@@ -231,37 +273,14 @@ def _format_summary_table(
     lookback_days: int,
     limit: int,
 ) -> str:
-    headers = ["Config", "Metric", "Min", "Max", "Avg", "Change (%)"]
-    formatted_rows: List[List[str]] = []
-    max_metric_len = int(os.getenv("PERF_SUMMARY_MAX_METRIC_LEN", "40"))
-    max_config_len = int(os.getenv("PERF_SUMMARY_MAX_CONFIG_LEN", "25"))
-    for row in rows:
-        change_display = _change_hint(row.get("change"), row.get("meta", {}))
-        config_label = _truncate_text(str(row.get("config", "")), max_config_len)
-        metric_label = _truncate_text(str(row.get("metric", "")), max_metric_len)
-        formatted_rows.append(
-            [
-                config_label,
-                metric_label,
-                str(row.get("min", "n/a")),
-                str(row.get("max", "n/a")),
-                str(row.get("avg", "n/a")),
-                str(change_display),
-            ]
-        )
-
-    table_body = _render_table(headers, formatted_rows)
-    metrics_note = (
-        f"top {len(rows)} of {total_metrics} metrics, "
-        f"last {lookback_days}d vs prior {lookback_days}d"
-    )
-    return "\n".join(
-        [
-            f"*Top {limit} Changes* (Version: {version}, {metrics_note})",
-            "```",
-            table_body,
-            "```",
-        ]
+    return _format_metrics_table(
+        title=f"*Top {limit} Changes*",
+        version=version,
+        rows=rows,
+        total_metrics=total_metrics,
+        lookback_days=lookback_days,
+        include_config=True,
+        note_prefix="top",
     )
 
 
@@ -332,7 +351,7 @@ async def get_metrics(
 
 async def get_performance_data(
     config: str, metric: str, version: str = _DEFAULT_VERSION, lookback: int = 14
-) -> dict:
+) -> PerformanceData:
     """
     Get performance data for a specific config/metric/version via MCP tool.
 
@@ -340,7 +359,7 @@ async def get_performance_data(
     :param metric: Metric name
     :param version: OpenShift version
     :param lookback: Number of days to look back
-    :return: Dict with 'values' list and metadata
+    :return: PerformanceData with values and optional error
     """
     logger.info(
         "Fetching performance data via MCP: config=%s, metric=%s, version=%s, lookback=%s",
@@ -377,7 +396,24 @@ async def get_performance_data(
         )
 
     if isinstance(result, dict) and "values" in result:
-        return result
+        values = result.get("values", [])
+        if isinstance(values, list):
+            return PerformanceData(
+                config=config,
+                metric=metric,
+                version=version,
+                lookback=lookback,
+                values=[v for v in values if v is not None],
+                error=result.get("error"),
+            )
+        return PerformanceData(
+            config=config,
+            metric=metric,
+            version=version,
+            lookback=lookback,
+            values=[],
+            error="Unexpected data format for metric values",
+        )
 
     if isinstance(result, dict) and "data" in result:
         data = result.get("data", {})
@@ -387,24 +423,22 @@ async def get_performance_data(
             values = metric_data.get("value", [])
             if isinstance(values, list):
                 values = [v for v in values if v is not None]
-                return {
-                    "config": config,
-                    "metric": metric,
-                    "version": version,
-                    "lookback": str(lookback),
-                    "values": values,
-                    "count": len(values),
-                }
+                return PerformanceData(
+                    config=config,
+                    metric=metric,
+                    version=version,
+                    lookback=lookback,
+                    values=values,
+                )
 
-    return {
-        "config": config,
-        "metric": metric,
-        "version": version,
-        "lookback": str(lookback),
-        "values": [],
-        "count": 0,
-        "error": "no data found",
-    }
+    return PerformanceData(
+        config=config,
+        metric=metric,
+        version=version,
+        lookback=lookback,
+        values=[],
+        error="no data found",
+    )
 
 
 def parse_perf_summary_args(
@@ -573,7 +607,7 @@ async def analyze_performance(
                         version=ver,
                         lookback=lookback_days,
                     )
-                    this_period_values = this_period_data.get("values", [])
+                    this_period_values = this_period_data.values
 
                     if not this_period_values:
                         row = {
@@ -595,7 +629,7 @@ async def analyze_performance(
                         version=ver,
                         lookback=lookback_window,
                     )
-                    two_period_values = two_period_data.get("values", [])
+                    two_period_values = two_period_data.values
 
                     this_period_count = len(this_period_values)
                     if len(two_period_values) > this_period_count:
