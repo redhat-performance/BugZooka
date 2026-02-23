@@ -16,13 +16,17 @@ llama-index-embeddings-huggingface==0.5.5
 llama-index-vector-stores-faiss==0.4.0
 
 # LangChain ecosystem (MCP + tools)
-langchain-core==0.3.80
+langchain-core==0.3.81
 langchain-mcp-adapters==0.1.10
+mcp==1.12.4
 
 # ML / Embeddings
 faiss-cpu==1.12.0
-torch==2.9.0+cpu
+torch==2.9.0 ; sys_platform == 'darwin'
+torch==2.9.0+cpu ; sys_platform == 'linux'
 sentence-transformers==5.1.2
+transformers==4.57.1
+huggingface-hub==0.36.0
 
 # Data validation & utilities
 pydantic==2.12.3
@@ -30,3 +34,5 @@ pydantic-settings==2.8.1
 tenacity==9.0.0
 python-dotenv==1.0.1
 PyYAML==6.0.2
+xmltodict==0.14.2
+logmine==0.4.1

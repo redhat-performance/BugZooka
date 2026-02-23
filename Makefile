@@ -56,3 +56,18 @@ deploy:  ## Deploy to OpenShift (uses overlays/rag if RAG_IMAGE provided, overla
 		echo "Deploying base default overlay"; \
 		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/base | envsubst | oc apply -f -; \
 	fi
+
+undeploy:
+	@set -a; \
+	if [ -f .env ]; then . ./.env; fi; \
+	set +a; \
+	if [ -n "$$RAG_IMAGE" ]; then \
+		echo "Deploying with RAG overlay (RAG_IMAGE=$$RAG_IMAGE)"; \
+		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/overlays/rag | envsubst | oc delete -f -; \
+	elif [ "$$CHATBOT" = "true" ]; then \
+		echo "Deploying with chatbot overlay"; \
+		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/overlays/chatbot | envsubst | oc delete -f -; \
+	else \
+		echo "Deploying base default overlay"; \
+		kustomize build --load-restrictor=LoadRestrictionsNone ./kustomize/base | envsubst | oc delete -f -; \
+	fi
