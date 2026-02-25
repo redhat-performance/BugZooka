@@ -8,7 +8,7 @@ from bugzooka.core.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
 from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.analysis.log_summarizer import search_prow_errors
 from bugzooka.analysis.xmlparser import summarize_junit_operator_xml
-from bugzooka.analysis.jsonparser import summarize_orion_json
+from bugzooka.analysis.jsonparser import extract_json_changepoints
 
 logger = logging.getLogger(__name__)
 
@@ -49,15 +49,25 @@ def scan_orion_jsons(directory_path):
     Extracts errors from orion jsons.
 
     :param directory_path: directory path for the artifacts
-    :return: list of errors
+    :return: tuple of (preview_results, full_results) where preview has
+             truncated PRs and full has all PRs
     """
     base_dir = Path(f"{directory_path}/orion")
     json_files = base_dir.glob("*.json")
+    preview_results = []
+    full_results = []
     for json_file in json_files:
-        json_content = summarize_orion_json(json_file)
-        if json_content != "":
-            return [json_content]
-    return []
+        try:
+            with open(json_file, "r") as f:
+                json_data = json.load(f)
+            if isinstance(json_data, list):
+                full = extract_json_changepoints(json_data)
+                preview = extract_json_changepoints(json_data, max_prs=5)
+                full_results.extend(full)
+                preview_results.extend(preview)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to parse orion JSON '%s': %s", json_file, e)
+    return preview_results, full_results
 
 
 def _trim_job_prefix(step_name, job_name):
@@ -114,7 +124,9 @@ def analyze_prow_artifacts(directory_path, job_name):
 
     :param directory_path: directory path for the artifacts
     :param job_name: job name to base line with
-    :return: tuple of (errors, categorization_message, requires_llm, is_install_issue, step_name)
+    :return: tuple of (errors, categorization_message, requires_llm, is_install_issue,
+             step_name, full_errors_for_file) where full_errors_for_file is a list
+             with untruncated PR data for file upload (None when not applicable)
     """
     step_summary = ""
     categorization_message = ""
@@ -130,6 +142,7 @@ def analyze_prow_artifacts(directory_path, job_name):
             False,
             True,
             None,
+            None,
         )
     with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
         matched_line = next(
@@ -144,7 +157,7 @@ def analyze_prow_artifacts(directory_path, job_name):
             matched_line = (
                 "Couldn't identify the failure step, likely a maintanence issue"
             )
-            return [matched_line], MAINTENANCE_ISSUE, False, True, None
+            return [matched_line], MAINTENANCE_ISSUE, False, True, None, None
     junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
     # Defaults in case XML parsing yields no values
     step_phase, step_name, step_summary = None, None, ""
@@ -184,11 +197,12 @@ def analyze_prow_artifacts(directory_path, job_name):
             False,
             False,
             step_name,
+            None,
         )
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
-        orion_errors = scan_orion_jsons(directory_path)
-        if len(orion_errors) == 0:
+        orion_preview, orion_full = scan_orion_jsons(directory_path)
+        if len(orion_preview) == 0:
             return (
                 [matched_line]
                 + [step_summary or ""]
@@ -197,13 +211,15 @@ def analyze_prow_artifacts(directory_path, job_name):
                 True,
                 False,
                 step_name,
+                None,
             )
         return (
-            [matched_line + "\n"] + orion_errors,
+            [matched_line + "\n"] + orion_preview,
             categorization_message,
             False,
             False,
             step_name,
+            [matched_line + "\n"] + orion_full,
         )
     return (
         [matched_line + "\n"] + cluster_operator_errors,
@@ -211,4 +227,5 @@ def analyze_prow_artifacts(directory_path, job_name):
         False,
         False,
         step_name,
+        None,
     )
