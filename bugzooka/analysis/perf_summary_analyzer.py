@@ -248,42 +248,6 @@ def _format_metrics_table(
     )
 
 
-def _format_config_table(
-    config: str,
-    version: str,
-    rows: List[dict],
-    total_metrics: int,
-    lookback_days: int,
-) -> str:
-    return _format_metrics_table(
-        title=f"*Config: {config}*",
-        version=version,
-        rows=rows,
-        total_metrics=total_metrics,
-        lookback_days=lookback_days,
-        include_config=False,
-        note_prefix="showing",
-    )
-
-
-def _format_summary_table(
-    version: str,
-    rows: List[dict],
-    total_metrics: int,
-    lookback_days: int,
-    limit: int,
-) -> str:
-    return _format_metrics_table(
-        title=f"*Top {limit} Changes*",
-        version=version,
-        rows=rows,
-        total_metrics=total_metrics,
-        lookback_days=lookback_days,
-        include_config=True,
-        note_prefix="top",
-    )
-
-
 async def get_configs() -> List[str]:
     """
     Get list of available Orion configuration files via MCP tool.
@@ -655,8 +619,14 @@ async def analyze_performance(
 
                 if verbose:
                     result_parts.append(
-                        _format_config_table(
-                            cfg, ver, rows, len(metrics), lookback_days
+                        _format_metrics_table(
+                            title=f"*Config: {cfg}*",
+                            version=ver,
+                            rows=rows,
+                            total_metrics=len(metrics),
+                            lookback_days=lookback_days,
+                            include_config=False,
+                            note_prefix="showing",
                         )
                     )
 
@@ -689,8 +659,14 @@ async def analyze_performance(
                 top_rows = sorted_rows[:limit]
                 if top_rows:
                     result_parts.append(
-                        _format_summary_table(
-                            ver, top_rows, total_metrics, lookback_days, limit
+                        _format_metrics_table(
+                            title=f"*Top {limit} Changes*",
+                            version=ver,
+                            rows=top_rows,
+                            total_metrics=total_metrics,
+                            lookback_days=lookback_days,
+                            include_config=True,
+                            note_prefix="top",
                         )
                     )
                 else:
