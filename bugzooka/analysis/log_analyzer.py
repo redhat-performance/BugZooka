@@ -25,7 +25,7 @@ from bugzooka.integrations.inference_client import (
 from bugzooka.integrations import mcp_client as mcp_module
 from bugzooka.integrations.mcp_client import initialize_global_resources_async
 from bugzooka.core.config import get_prompt_config
-from bugzooka.analysis.prow_analyzer import analyze_prow_artifacts
+from bugzooka.analysis.prow_analyzer import analyze_prow_artifacts, ProwAnalysisResult
 from bugzooka.core.utils import extract_job_details
 
 logger = logging.getLogger(__name__)
@@ -129,7 +129,14 @@ def download_and_analyze_logs(text):
     """Extract job details, download and analyze logs."""
     job_url, job_name = extract_job_details(text)
     if job_url is None or job_name is None:
-        return None, None, None, None, None, None
+        return ProwAnalysisResult(
+            errors=None,
+            categorization_message=None,
+            requires_llm=None,
+            is_install_issue=None,
+            step_name=None,
+            full_errors_for_file=None,
+        )
     directory_path = download_prow_logs(job_url)
     return analyze_prow_artifacts(directory_path, job_name)
 
