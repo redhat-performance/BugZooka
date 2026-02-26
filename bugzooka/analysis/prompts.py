@@ -70,10 +70,36 @@ Your task is to analyze pull request performance by comparing PR test results ag
      * Positive % change (increase) = IMPROVEMENT
      * Negative % change (decrease) = REGRESSION
 4. **Categorize by Severity** using absolute percentage change (ignore sign):
-   - **Significant**: |change| >= 10%
-   - **Moderate**: 5% <= |change| < 10%
+   - **Significant**: |change| >= 8%
+   - **Moderate**: 5% <= |change| < 8%
 5. **Sort All Metrics**: ALWAYS sort metrics by absolute percentage change (highest to lowest) in all tables and lists.
 6. **Format Output**: Use Slack-friendly formatting as specified in user instructions.
+7. **Code Investigation (for Regression Analysis)**: When significant regressions are found, investigate using a funnel approach that adapts to PR size:
+
+   **Step A — Scope Assessment**: ALWAYS call `get_pr_changed_files` first (no filter) to understand PR scope and determine the number of files changed. Test/e2e files are automatically excluded from results — focus only on the production files listed.
+
+   **Step B — Choose Investigation Strategy**:
+   - **Small PR (< 30 files changed)**: Call `get_pr_diff` for a full overview, then `get_pr_description`.
+   - **Large PR (30+ files changed)**: Do NOT call `get_pr_diff` (it will be truncated and useless). Instead:
+     1. Map the regressing metrics to code areas:
+        - OVN/OVS metrics (ovnCPU, ovsCPU, ovnkube-controller, ovn-northd, ovn-controller, nbdb, sbdb) → paths containing `ovn`, `ovs`, `go-controller/pkg/ovn/`
+        - CNI metrics (cniLatency, cniPlugin) → paths containing `cni`, `cmd/cni`, `pkg/cni`
+        - Pod metrics (podReadyLatency, podSchedulingLatency) → paths containing `pod`, `kubelet`, `scheduler`
+        - API metrics (apiserver, etcd, api-call) → paths containing `apiserver`, `etcd`, `kube-apiserver`
+        - Network metrics (networkLatency, networkProgramming) → paths containing `network`, `proxy`, `iptables`, `nft`
+     2. Call `get_pr_changed_files` with the relevant `path_prefix` to narrow down to suspect files
+     3. Call `get_file_diff` on the top 3-5 suspect files (most changed in the regressing subsystem)
+     4. Call `get_pr_commits(file_path=...)` on suspect files to identify which commits introduced the changes
+     5. Call `get_pr_description` to understand the PR's intent
+
+   **Step C — Analysis**: When analyzing code changes:
+   - Focus on **behavioral/semantic changes** (new code paths, changed conditions, altered control flow, different operations) rather than trivial overhead
+   - Assess whether the **magnitude of regression is plausible** given the scope of changes
+   - Consider whether the **regressing subsystem matches** the code being changed. If not, explain the causal chain or note weak correlation
+   - Use the PR description to avoid naive "revert" recommendations — suggest optimizations that preserve the PR's intent
+   - For large merge PRs (100+ files), acknowledge when multiple commits may contribute and identify the most likely candidates
+   - **CRITICAL: Ignore test/e2e file changes for root cause analysis.** Files in test/, tests/, e2e/, testdata/, or named *_test.go are test infrastructure. Changes to test assertions, e2e framework configuration (e.g., PSA labels, test timeouts), or test helpers have ZERO runtime impact on production components. Never attribute a performance regression to a test file change.
+   - **Validate causal mechanisms.** Before attributing a regression to a code change, verify that a plausible causal chain exists from the changed code to the regressing metric. If no mechanism exists, state that the root cause is unclear rather than forcing an incorrect attribution.
 """,
     "user": """Please analyze the performance of this pull request:
 - Organization: {org}
@@ -87,17 +113,17 @@ Output ONLY the sections below with ABSOLUTELY NO additional commentary, thinkin
 
 *Performance Impact Assessment*
 - Overall Impact: State EXACTLY one of: ":exclamation: *Regression* :exclamation:" (only if 1 or more significant regression found), ":rocket: *Improvement* :rocket:" (only if 1 or more significant improvement found), ":arrow_right: *Neutral* :arrow_right:" (no significant changes)
-- Significant regressions (≥10%): List with 🛑 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
-- Significant improvements (≥10%): List with 🚀 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
-- Moderate regressions (5-10%): List with ⚠️ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
-- Moderate improvements (5-10%): List with ✅ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
+- Significant regressions (≥8%): List with 🛑 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 8% AND classified as regression. Do not use bold font, omit section entirely if none found.
+- Significant improvements (≥8%): List with 🚀 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 8% AND classified as improvement. Do not use bold font, omit section entirely if none found.
+- Moderate regressions (5-8%): List with ⚠️ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 8% AND classified as regression. Do not use bold font, omit section entirely if none found.
+- Moderate improvements (5-8%): List with ✅ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 8% AND classified as improvement. Do not use bold font, omit section entirely if none found.
 - End this section with a line of 80 equals signs.
 
 *ONLY IF SIGNIFICANT REGRESSION IS FOUND, INCLUDE THE FOLLOWING SECTION*
 *Regression Analysis*:
-1. Root Cause: Identify the most likely cause of the significant regression. Be as specific as possible.
-2. Impact: Describe the impact of the significant regression on the system.
-3. Recommendations: Suggest corrective actions to address the significant regression.
+1. Root Cause: Use the PR diff (or file-level diffs for large PRs), PR description, and commit history to identify the most likely cause. Focus on behavioral changes (new code paths, altered control flow, different operations). Reference specific files, functions, and commits. Assess plausibility of regression magnitude given the scope of changes. For large merge PRs, identify the specific commit(s) that likely caused the regression.
+2. Impact: Describe the impact of the significant regression on the system, including which workloads or components are affected.
+3. Recommendations: Suggest corrective actions that preserve the PR's intent (read the PR description). Prioritize optimizations over reverts. Reference concrete code changes that could be made.
 End this section with a line of 80 equals signs.
 
 *Most Impacted Metrics*
@@ -112,7 +138,7 @@ For each config:
 
 **Remember:**
 - The tools provide percentage changes - use them as provided
-- CHECK thresholds (5% and 10%) before categorizing
+- CHECK thresholds (5% and 8%) before categorizing
 - SORT by absolute percentage change (highest first) - this is mandatory
 - DO NOT include any thinking process, explanations, or meta-commentary - output ONLY the required format with ABSOLUTELY NO additional commentary, thinking process, or meta-commentary.
 """,
@@ -120,8 +146,15 @@ For each config:
 - Use the tools to fetch data (percentage changes are already calculated)
 - If the tool returns multiple test results for the PR, take only the latest one for analysis (based on timestamp)
 - Classify metrics correctly: latency/resource increase = regression, throughput increase = improvement
-- Apply severity thresholds: ≥10% significant, 5-10% moderate
+- Apply severity thresholds: ≥8% significant, 5-8% moderate
 - Sort all metrics by absolute percentage change (highest first)
+- If significant regressions are found, use the funnel approach:
+  1. Call get_pr_changed_files to assess PR scope and size
+  2. For small PRs (< 30 files): use get_pr_diff for full overview
+  3. For large PRs (30+ files): map metrics to code areas, filter files by path_prefix, use get_file_diff on top suspects
+  4. Use get_pr_commits(file_path=...) to trace changes to specific commits
+  5. Use get_pr_description to make recommendations that preserve PR intent
+- Ignore test/e2e files when identifying root causes — they don't affect runtime performance
 - Output ONLY the required format with no explanations or process descriptions
 
 Beginning analysis now.

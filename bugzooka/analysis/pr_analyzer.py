@@ -13,8 +13,10 @@ from bugzooka.integrations.mcp_client import (
     tool_not_found_error,
 )
 from bugzooka.core.utils import make_response
+from bugzooka.core.constants import PR_ANALYSIS_MAX_TOOL_ITERATIONS
 from bugzooka.integrations.inference_client import analyze_with_agentic
 from bugzooka.analysis.prompts import PR_PERFORMANCE_ANALYSIS_PROMPT
+from bugzooka.analysis.pr_tools import clear_pr_files_cache, create_pr_tools
 import bugzooka.integrations.mcp_client as mcp_module
 
 
@@ -137,7 +139,11 @@ async def analyze_pr_with_gemini(text: str) -> dict:
 
         system_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["system"]
         user_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["user"].format(
-            org=org, repo=repo, pr_number=pr_number, pr_url=pr_url, version=version
+            org=org,
+            repo=repo,
+            pr_number=pr_number,
+            pr_url=pr_url,
+            version=version,
         )
         assistant_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["assistant"]
 
@@ -147,10 +153,18 @@ async def analyze_pr_with_gemini(text: str) -> dict:
             {"role": "assistant", "content": assistant_prompt},
         ]
 
+        # Clear stale cache before creating new tools for this analysis
+        clear_pr_files_cache()
+
+        # Create PR investigation tools and combine with MCP tools
+        pr_tools = create_pr_tools(org, repo, pr_number)
+        all_tools = mcp_module.mcp_tools + pr_tools
+
         # Use the agentic loop with tool calling
         result = await analyze_with_agentic(
             messages=messages,
-            tools=mcp_module.mcp_tools,
+            tools=all_tools,
+            max_iterations=PR_ANALYSIS_MAX_TOOL_ITERATIONS,
         )
 
         # Handle empty results
