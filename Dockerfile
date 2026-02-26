@@ -25,12 +25,7 @@ RUN set -eux; \
 COPY requirements.txt .
 
 # Install Python dependencies (including gsutil) to a target directory
-RUN pip install --no-cache-dir --target /app-packages -r requirements.txt gsutil \
-    && find /app-packages -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true \
-    && find /app-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
-    && find /app-packages -name "*.pyc" -delete 2>/dev/null || true \
-    && find /app-packages -name "*.pyo" -delete 2>/dev/null || true \
-    && find /app-packages -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+RUN pip install --no-cache-dir --target /app-packages -r requirements.txt gsutil
 
 # ================================
 # Stage 2: Runtime stage

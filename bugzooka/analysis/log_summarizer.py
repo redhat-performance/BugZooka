@@ -71,9 +71,9 @@ def get_prow_inner_artifact_files(gcs_path):
     return log_folder_path, inner_files
 
 
-def download_prow_orion_xmls(gcs_path, output_dir):
+def download_prow_orion_jsons(gcs_path, output_dir):
     """
-    Downloads all orion xmls to the output directory.
+    Downloads all orion jsons to the output directory.
 
     :param gcs_path: path in gcs storage
     :param output_dir: output directory to store artifacts
@@ -88,17 +88,17 @@ def download_prow_orion_xmls(gcs_path, output_dir):
             f.strip("/").split("/")[-1] for f in inner_files if "orion" in f
         ]
 
-        orion_xmls = []
+        orion_jsons = []
         for folder in orion_folders:
-            xml_path = f"{log_folder_path}{folder}/artifacts/"
-            xml_files = list_gcs_files(xml_path)
-            orion_xmls.extend(f for f in xml_files if f.endswith(".xml"))
+            json_path = f"{log_folder_path}{folder}/artifacts/"
+            json_files = list_gcs_files(json_path)
+            orion_jsons.extend(f for f in json_files if f.endswith(".json"))
 
-        for xml_url in orion_xmls:
-            download_file_from_gcs(xml_url, output_dir)
+        for json_url in orion_jsons:
+            download_file_from_gcs(json_url, output_dir)
 
     except subprocess.CalledProcessError as e:
-        logger.error("Error processing Orion XMLs: %s", e.stderr)
+        logger.error("Error processing Orion JSONs: %s", e.stderr)
 
 
 def download_prow_cluster_operators(gcs_path, output_dir):
@@ -147,7 +147,7 @@ def download_prow_logs(url, output_dir="/tmp/"):
     download_prow_build_log(gcs_path, log_dir)
     download_prow_junit_operator_xml(gcs_path, log_dir)
     download_prow_cluster_operators(gcs_path, log_dir)
-    download_prow_orion_xmls(gcs_path, orion_dir)
+    download_prow_orion_jsons(gcs_path, orion_dir)
 
     return log_dir
 
