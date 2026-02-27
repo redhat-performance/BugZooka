@@ -483,12 +483,12 @@ class SlackMessageFetcher(SlackClientBase):
 
         # For orion/changepoint failures, include visualization link in preview
         viz_url = None
+        view_url = None
         is_changepoint = "orion" in (categorization_message or "").lower()
-        if is_changepoint and step_name:
+        if is_changepoint:
             view_url, _ = extract_job_details(text)
-            viz_url = (
-                construct_visualization_url(view_url, step_name) if view_url else None
-            )
+            if step_name and view_url:
+                viz_url = construct_visualization_url(view_url, step_name)
 
         pending_file = self._send_error_logs_preview(
             errors_list,
@@ -501,6 +501,14 @@ class SlackMessageFetcher(SlackClientBase):
 
         # Upload full error log just before job history
         if pending_file:
+            if is_changepoint and view_url:
+                lines = pending_file.split("\n")
+                new_lines = []
+                for line in lines:
+                    new_lines.append(line)
+                    if line.startswith("Previous:"):
+                        new_lines.append(f"Build URL: {view_url}")
+                pending_file = "\n".join(new_lines)
             self._upload_full_error_log(pending_file, ts)
 
         # Add job-history info in the thread after the full error log
