@@ -42,14 +42,13 @@ from typing import Dict, Tuple, Optional, List, Any
 class SlackMessageFetcher(SlackClientBase):
     """Continuously fetches new messages from a Slack channel and logs them."""
 
-    def __init__(self, channel_id, logger, poll_interval=600, enable_socket_mode=False):
+    def __init__(self, channel_id, logger, poll_interval=600):
         """Initialize Slack client and channel details."""
         # Initialize base class (handles WebClient, logger, channel_id, running flag, signal handler)
         super().__init__(logger, channel_id)
 
         self.poll_interval = poll_interval  # How often to fetch messages
         self.last_seen_timestamp = None  # Track the latest message timestamp
-        self.enable_socket_mode = enable_socket_mode
 
     def _sanitize_job_text(self, text: str) -> str:
         """

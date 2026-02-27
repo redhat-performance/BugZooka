@@ -99,7 +99,6 @@ Mention the bot in Slack with the following format:
 ```
 For local testing, see [Orion-MCP](https://github.com/jtaleric/orion-mcp) for instructions on how to run orion-mcp.
 
-<<<<<<< option2-config-alias
 #### **Performance Summary (Orion-MCP)**
 
 BugZooka can generate a configurable performance summary across metrics for one or more configs and versions. This feature requires the **orion-mcp server** to be reachable via `mcp_config.json`.
@@ -114,15 +113,14 @@ BugZooka can generate a configurable performance summary across metrics for one 
 @BugZooka performance summary 14d
 @BugZooka performance summary 30d ALL verbose
 @BugZooka performance summary 7d trt-external-payload-node-density.yaml 4.19
+@BugZooka performance summary 7d trt-external-payload-node-density.yaml 4.19,4.20,4.22
 ```
 
 **Notes:**
 - If no config is provided, defaults to a curated control-plane config list.
-- `ALL` uses all available Orion configs (fallback list is used if MCP is unavailable).
-- Multiple versions can be provided (e.g. `4.19 4.20`).
-- When Socket Mode is enabled, the polling handler skips `performance summary` to avoid duplicate replies.
+- `ALL` uses all 41 available Orion configs (fallback list is used if MCP is unavailable).
+- Socket Mode has to be enabled.
 - Without the verbose option, the default is ranking the top 15 most influential metrics with visual hints.
-=======
 ### **Supported Bot Triggers**
 #### **Job Summary**
 * `summarize Nd` - Job summary for N number of days.
@@ -136,7 +134,6 @@ BugZooka can generate a configurable performance summary across metrics for one 
 * `@PerfScale Jedi inspect 4.22.0-0.nightly-2026-01-05-203335 for config trt-external-payload-node-density.yaml` - Calls `has_nightly_regressed` tool in [orion-mcp](https://github.com/cloud-bulldozer/orion-mcp) for a given nightly checks regression only for a given orion configuration file instead of the [default](https://github.com/cloud-bulldozer/orion-mcp/blob/main/orion_mcp.py#L470).
 
 **Note**: All the triggers that start with a bot mention (.i.e. `@PerfScale Jedi`) run in socket mode. All socket mode features can be used in any slack channel without needing to host your own on premise openshift deployment.
->>>>>>> main
 
 ## **Configurables**
 This tool monitors a slack channel and uses AI to provide replies to CI failure messages. Also it operates as a singleton instance.
@@ -169,12 +166,6 @@ INFERENCE_API_RETRY_MAX_ATTEMPTS="3"         # Max retry attempts (default: 3)
 INFERENCE_API_RETRY_DELAY="5.0"              # Initial retry delay in seconds (default: 5.0)
 INFERENCE_API_RETRY_BACKOFF_MULTIPLIER="2.0" # Exponential backoff multiplier (default: 2.0)
 INFERENCE_API_RETRY_MAX_DELAY="60.0"         # Max retry delay in seconds (default: 60.0)
-
-### Performance Summary (optional)
-PERF_SUMMARY_LOOKBACK_DAYS="14"              # Default lookback window for perf summary
-PERF_SUMMARY_MAX_METRIC_LEN="40"             # Truncation length for metric labels
-PERF_SUMMARY_MAX_CONFIG_LEN="25"             # Truncation length for config labels
-PERF_SUMMARY_SLACK_MSG_LIMIT="3500"          # Slack message size safety cap
 ```
 **Note**: The inference client works with any OpenAI-compatible API endpoint. Make sure to provide the mandatory Slack and inference configuration.
 
