@@ -440,7 +440,6 @@ class SlackMessageFetcher(SlackClientBase):
             return ts
 
         # No weekly trigger; dynamic summarize only
-
         if "failure" not in text_lower:
             self.logger.info("Not a failure job, skipping")
             return ts

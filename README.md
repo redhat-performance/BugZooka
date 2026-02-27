@@ -99,6 +99,28 @@ Mention the bot in Slack with the following format:
 ```
 For local testing, see [Orion-MCP](https://github.com/jtaleric/orion-mcp) for instructions on how to run orion-mcp.
 
+#### **Performance Summary (Orion-MCP)**
+
+BugZooka can generate a configurable performance summary across metrics for one or more configs and versions. This feature requires the **orion-mcp server** to be reachable via `mcp_config.json`.
+
+**Usage:**
+```
+@BugZooka performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...] [verbose]
+```
+
+**Examples:**
+```
+@BugZooka performance summary 14d
+@BugZooka performance summary 30d ALL verbose
+@BugZooka performance summary 7d trt-external-payload-node-density.yaml 4.19
+@BugZooka performance summary 7d trt-external-payload-node-density.yaml 4.19,4.20,4.22
+```
+
+**Notes:**
+- If no config is provided, defaults to a curated control-plane config list.
+- `ALL` uses all 41 available Orion configs (fallback list is used if MCP is unavailable).
+- Socket Mode has to be enabled.
+- Without the verbose option, the default is ranking the top 15 most influential metrics with visual hints.
 ### **Supported Bot Triggers**
 #### **Job Summary**
 * `summarize Nd` - Job summary for N number of days.
@@ -122,6 +144,7 @@ All secrets are passed using a `.env` file which is located in the root director
 ### Mandatory fields
 SLACK_BOT_TOKEN="YOUR_SLACK_BOT_TOKEN"
 SLACK_CHANNEL_ID="YOUR_SLACK_CHANNEL_ID"
+JEDI_BOT_SLACK_USER_ID="YOUR_BOT_USER_ID"
 
 ### Optional for Socket Mode (required only when using --enable-socket-mode)
 SLACK_APP_TOKEN="YOUR_SLACK_APP_TOKEN"  # App-level token (xapp-*) for WebSocket mode

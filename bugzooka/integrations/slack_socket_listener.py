@@ -20,6 +20,10 @@ from bugzooka.core.config import (
 )
 from bugzooka.analysis.pr_analyzer import analyze_pr_with_gemini
 from bugzooka.analysis.nightly_regression_analyzer import analyze_nightly_regression
+from bugzooka.analysis.perf_summary_analyzer import (
+    analyze_performance,
+    parse_perf_summary_args,
+)
 from bugzooka.integrations.slack_client_base import SlackClientBase
 
 
@@ -234,6 +238,74 @@ class SlackSocketListener(SlackClientBase):
                 )
             return
 
+        # Check if message contains "performance summary"
+        if "performance summary" in text.lower():
+            try:
+                # Send initial acknowledgment
+                self.client.chat_postMessage(
+                    channel=channel,
+                    text="📊 Gathering performance summary... This may take a moment.",
+                    thread_ts=ts,
+                )
+
+                # Parse configs, versions, lookback days, and verbose flag
+                (
+                    configs,
+                    versions,
+                    lookback_days,
+                    verbose,
+                    use_all_configs,
+                ) = parse_perf_summary_args(text)
+
+                # Run async function in sync context
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(
+                        analyze_performance(
+                            configs,
+                            versions,
+                            lookback_days=lookback_days,
+                            verbose=verbose,
+                            use_all_configs=use_all_configs,
+                        )
+                    )
+                finally:
+                    loop.close()
+
+                # Send the result(s) - may be multiple messages to avoid Slack limit
+                if result["success"]:
+                    messages = result.get("messages", [])
+                    for msg in messages:
+                        self.client.chat_postMessage(
+                            channel=channel,
+                            text=msg,
+                            thread_ts=ts,
+                        )
+                    self.logger.info(
+                        f"✅ Sent performance summary to {user} ({len(messages)} message(s))"
+                    )
+                else:
+                    self.client.chat_postMessage(
+                        channel=channel,
+                        text=result.get("message", "Unknown error"),
+                        thread_ts=ts,
+                    )
+                    self.logger.warning(
+                        f"⚠️ Performance summary failed: {result.get('message')}"
+                    )
+
+            except Exception as e:
+                self.logger.error(
+                    f"Error processing performance summary: {e}", exc_info=True
+                )
+                self.client.chat_postMessage(
+                    channel=channel,
+                    text=f"❌ Unexpected error: {str(e)}",
+                    thread_ts=ts,
+                )
+            return
+
         # Default: Send simple greeting message
         try:
             self.client.chat_postMessage(
@@ -241,7 +313,8 @@ class SlackSocketListener(SlackClientBase):
                 text="May the force be with you! :performance_jedi:\n\n"
                 ":bulb: *Tips:*\n"
                 "- `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` - PR performance analysis\n"
-                "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis",
+                "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis\n"
+                "- `performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...] [verbose]` - Performance metrics summary",
                 thread_ts=ts,
             )
             self.logger.info(f"✅ Sent greeting to {user}")
