@@ -152,6 +152,52 @@ def download_prow_logs(url, output_dir="/tmp/"):
     return log_dir
 
 
+def construct_visualization_url(view_url, step_name):
+    """
+    Build a gcsweb URL pointing to the step's artifacts directory.
+
+    :param view_url: prow view URL
+    :param step_name: raw step name from junit_operator.xml
+    :return: gcsweb URL string, or None if the log folder cannot be resolved
+    """
+    try:
+        gcs_path = view_url.split("view/gs/")[1]
+        base = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/"
+        artifact_root = f"gs://{gcs_path}/artifacts/"
+        top_folders = list_gcs_files(artifact_root)
+
+        # Find the folder that actually contains the step as a subfolder.
+        # The junit step_name often includes the log_folder as a prefix
+        # (e.g. "payload-control-plane-6nodes-openshift-qe-orion-udn-density")
+        # while the GCS folder is just "openshift-qe-orion-udn-density".
+        for entry in top_folders:
+            if not entry.rstrip().endswith("/"):
+                continue
+            folder = entry.strip("/").split("/")[-1]
+            # Try with prefix stripped first, then the raw step_name
+            candidates = [step_name]
+            prefix = folder + "-"
+            if step_name.startswith(prefix):
+                candidates.insert(0, step_name[len(prefix) :])
+            for candidate in candidates:
+                step_artifacts = f"{artifact_root}{folder}/{candidate}/artifacts/"
+                try:
+                    files = list_gcs_files(step_artifacts)
+                except Exception:
+                    continue
+                artifacts_path = f"{gcs_path}/artifacts/{folder}/{candidate}/artifacts/"
+                html_files = [f for f in files if f.endswith(".html")]
+                if html_files:
+                    html_name = html_files[0].strip("/").split("/")[-1]
+                    return f"{base}{artifacts_path}{html_name}"
+                return f"{base}{artifacts_path}"
+
+        return None
+    except Exception as e:
+        logger.error("Failed to construct visualization URL: %s", e)
+        return None
+
+
 def get_logjuicer_extract(directory_path, job_name):
     """Extracts erros using logjuicer using fallback mechanism.
 

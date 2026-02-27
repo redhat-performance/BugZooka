@@ -1,4 +1,3 @@
-import io
 import time
 import re
 import os
@@ -9,10 +8,7 @@ from bugzooka.core.config import (
     JEDI_BOT_SLACK_USER_ID,
     SUMMARY_LOOKBACK_SECONDS,
 )
-from bugzooka.core.constants import (
-    MAX_CONTEXT_SIZE,
-    MAX_PREVIEW_CONTENT,
-)
+from bugzooka.core.constants import MAX_PREVIEW_CONTENT
 from bugzooka.analysis.log_analyzer import (
     download_and_analyze_logs,
     filter_errors_with_llm,
@@ -21,6 +17,7 @@ from bugzooka.analysis.log_analyzer import (
 from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
     build_summary_sections,
+    construct_visualization_url,
 )
 from bugzooka.analysis.prompts import RAG_AWARE_PROMPT
 from bugzooka.integrations.inference_client import (
@@ -203,42 +200,53 @@ class SlackMessageFetcher(SlackClientBase):
                 )
         return new_messages
 
+    def _get_failure_desc(self, categorization_message):
+        """Extract the failure description from a categorization message for display."""
+        display_tag = re.sub(r"openshift-qe[\s-]?", "", categorization_message)
+        parts = display_tag.split(" phase: ", 1)
+        return parts[1].strip() if len(parts) == 2 else display_tag
+
     def _send_error_logs_preview(
-        self, errors_list, categorization_message, max_ts, is_install_issue=False
+        self,
+        errors_list,
+        categorization_message,
+        max_ts,
+        is_install_issue=False,
+        full_errors_for_file=None,
+        viz_url=None,
     ):
         """Send error logs preview to Slack (either as message or file)."""
-        errors_log_preview = "\n".join(errors_list or [])[:MAX_PREVIEW_CONTENT]
-        errors_list_string = "\n".join(errors_list or [])[:MAX_CONTEXT_SIZE]
+        errors_preview = "\n".join(errors_list or [])
+        is_changepoint = full_errors_for_file is not None
+        preview_limit = 2048 if is_changepoint else MAX_PREVIEW_CONTENT
+        errors_log_preview = errors_preview[:preview_limit]
+        # Use full untruncated content for file upload when available
+        errors_for_file = (
+            "\n".join(full_errors_for_file) if full_errors_for_file else errors_preview
+        )
+        failure_desc = self._get_failure_desc(categorization_message)
+        header_text = f":red_circle: *{failure_desc}* :red_circle:\n"
+        if viz_url:
+            header_text += f"<{viz_url}|View Changepoint Visualization>\n"
+        header_text += "\nError Logs Preview"
 
-        if len(errors_list_string) > MAX_PREVIEW_CONTENT:
-            preview_message = (
-                f":checking: *Error Logs Preview ({categorization_message})*\n"
-                "Here are the first few lines of the error log:\n"
-                f"```{errors_log_preview.strip()}```\n"
-                "_(Log preview truncated. Full log attached below.)_"
-            )
-            self.logger.info("📤 Uploading full error log with preview message")
-            log_bytes = io.BytesIO(errors_list_string.strip().encode("utf-8"))
-            self.client.files_upload_v2(
-                channel=self.channel_id,
-                file=log_bytes,
-                filename="full_errors.log",
-                title="Full Error Log",
-                thread_ts=max_ts,
-                initial_comment=preview_message,
-            )
-        else:
-            self.logger.info("📤 Trying to just send the preview message")
-            message_block = self.get_slack_message_blocks(
-                markdown_header=f":checking: *Error Logs Preview ({categorization_message})*\n",
-                content_text=f"{errors_log_preview.strip()}",
-            )
-            self.client.chat_postMessage(
-                channel=self.channel_id,
-                text="Error Logs Preview",
-                blocks=message_block,
-                thread_ts=max_ts,
-            )
+        needs_file = len(errors_for_file) > preview_limit
+
+        # Always post the preview message first
+        message_block = self.get_slack_message_blocks(
+            markdown_header=f"{header_text}\n",
+            content_text=f"{errors_log_preview.strip()}",
+        )
+        self.client.chat_postMessage(
+            channel=self.channel_id,
+            text="Error Logs Preview",
+            blocks=message_block,
+            thread_ts=max_ts,
+        )
+
+        # Return file content for the caller to upload at the right point
+        # in the thread (just before job history).
+        pending_file = errors_for_file.strip() if needs_file else None
 
         if is_install_issue:
             retrigger_message = (
@@ -255,6 +263,20 @@ class SlackMessageFetcher(SlackClientBase):
                 blocks=message_block,
                 thread_ts=max_ts,
             )
+
+        return pending_file
+
+    def _upload_full_error_log(self, content, max_ts):
+        """Upload full error log file to the thread."""
+        self.logger.info("Uploading full error log file")
+        self.client.files_upload_v2(
+            channel=self.channel_id,
+            content=content,
+            filename="full_errors.txt",
+            title="Full Error Log",
+            thread_ts=max_ts,
+        )
+        time.sleep(1)
 
     def _send_analysis_result(self, response, max_ts):
         """Send the final analysis result to Slack."""
@@ -358,6 +380,8 @@ class SlackMessageFetcher(SlackClientBase):
                         categorization_message,
                         _requires_llm,
                         is_install_issue,
+                        _step_name,
+                        _full_errors,
                     ) = analysis
                     if errors_list is None:
                         category = "unknown"
@@ -451,16 +475,43 @@ class SlackMessageFetcher(SlackClientBase):
             categorization_message,
             requires_llm,
             is_install_issue,
+            step_name,
+            full_errors_for_file,
         ) = download_and_analyze_logs(text)
         if errors_list is None:
             return ts
 
-        # Send error logs preview first
-        self._send_error_logs_preview(
-            errors_list, categorization_message, ts, is_install_issue
+        # For orion/changepoint failures, include visualization link in preview
+        viz_url = None
+        view_url = None
+        is_changepoint = "orion" in (categorization_message or "").lower()
+        if is_changepoint:
+            view_url, _ = extract_job_details(text)
+            if step_name and view_url:
+                viz_url = construct_visualization_url(view_url, step_name)
+
+        pending_file = self._send_error_logs_preview(
+            errors_list,
+            categorization_message,
+            ts,
+            is_install_issue,
+            full_errors_for_file=full_errors_for_file,
+            viz_url=viz_url,
         )
 
-        # Add job-history info in the thread after the preview
+        # Upload full error log just before job history
+        if pending_file:
+            if is_changepoint and view_url:
+                lines = pending_file.split("\n")
+                new_lines = []
+                for line in lines:
+                    new_lines.append(line)
+                    if line.startswith("Previous:"):
+                        new_lines.append(f"Build URL: {view_url}")
+                pending_file = "\n".join(new_lines)
+            self._upload_full_error_log(pending_file, ts)
+
+        # Add job-history info in the thread after the full error log
         self._handle_job_history(thread_ts=ts, current_message=msg)
 
         if is_install_issue or not enable_inference:

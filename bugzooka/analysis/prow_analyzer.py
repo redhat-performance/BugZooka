@@ -4,13 +4,26 @@ import os
 import re
 from collections import deque
 from pathlib import Path
+from typing import Optional, NamedTuple
+
 from bugzooka.core.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
 from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.analysis.log_summarizer import search_prow_errors
 from bugzooka.analysis.xmlparser import summarize_junit_operator_xml
-from bugzooka.analysis.jsonparser import summarize_orion_json
+from bugzooka.analysis.jsonparser import extract_json_changepoints
 
 logger = logging.getLogger(__name__)
+
+
+class ProwAnalysisResult(NamedTuple):
+    """Result of analyzing prow artifacts for a failed job."""
+
+    errors: Optional[list]
+    categorization_message: Optional[str]
+    requires_llm: Optional[bool]
+    is_install_issue: Optional[bool]
+    step_name: Optional[str]
+    full_errors_for_file: Optional[list]
 
 
 def get_cluster_operator_errors(directory_path):
@@ -49,30 +62,71 @@ def scan_orion_jsons(directory_path):
     Extracts errors from orion jsons.
 
     :param directory_path: directory path for the artifacts
-    :return: list of errors
+    :return: tuple of (preview_results, full_results) where preview has
+             truncated PRs and full has all PRs
     """
     base_dir = Path(f"{directory_path}/orion")
     json_files = base_dir.glob("*.json")
+    preview_results = []
+    full_results = []
     for json_file in json_files:
-        json_content = summarize_orion_json(json_file)
-        if json_content != "":
-            return [json_content]
-    return []
+        try:
+            with open(json_file, "r") as f:
+                json_data = json.load(f)
+            if isinstance(json_data, list):
+                full = extract_json_changepoints(json_data)
+                preview = extract_json_changepoints(json_data, max_prs=5)
+                full_results.extend(full)
+                preview_results.extend(preview)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to parse orion JSON '%s': %s", json_file, e)
+    return preview_results, full_results
 
 
-def categorize_prow_failure(step_name, step_phase):
+def _trim_job_prefix(step_name, job_name):
+    """
+    Remove the redundant job test-identifier prefix from the step name.
+
+    The step name often starts with the job's test identifier (a suffix of the
+    job name).  E.g. job "...-aws-4.22-nightly-x86-payload-control-plane-6nodes"
+    produces step "payload-control-plane-6nodes-openshift-qe-orion-udn-l3".
+    This function strips the overlapping prefix to yield "openshift-qe-orion-udn-l3".
+
+    :param step_name: lowered step name
+    :param job_name: full job name
+    :return: trimmed step name
+    """
+    if not job_name:
+        return step_name
+    job_parts = job_name.lower().split("-")
+    for i in range(len(job_parts)):
+        suffix = "-".join(job_parts[i:])
+        if step_name.startswith(suffix + "-"):
+            trimmed = step_name[len(suffix) + 1 :]
+            if trimmed:
+                return trimmed
+            break
+    return step_name
+
+
+def categorize_prow_failure(step_name, step_phase, job_name=""):
     """
     Categorize prow failures.
 
     :param step_name: step name
     :param step_phase: step phase
+    :param job_name: full job name used to strip redundant prefixes
     :return: categorized preview tag message
     """
-    step_name = step_name.lower()
+    step_name = _trim_job_prefix(step_name.lower(), job_name)
+    step_name = re.sub(r"-?[Xx]{3,}-?", "-", step_name).strip("-")
 
     for keyword, (_, description) in FAILURE_KEYWORDS.items():
         if keyword in step_name:
-            return f"{step_phase} phase: {description}"
+            short_name = step_name[step_name.index(keyword) :]
+            if len(short_name) > len(keyword) + 1:
+                return f"{step_phase} phase: {short_name} failure"
+            return f"{step_phase} phase: {step_name} failure"
 
     return f"{step_phase} phase: {step_name} step failure"
 
@@ -83,7 +137,8 @@ def analyze_prow_artifacts(directory_path, job_name):
 
     :param directory_path: directory path for the artifacts
     :param job_name: job name to base line with
-    :return: tuple of (list of errors, categorization_message, requires_llm, is_install_issue)
+    :return: ProwAnalysisResult with errors, categorization, and optional
+             full_errors_for_file (untruncated PR data for file upload)
     """
     step_summary = ""
     categorization_message = ""
@@ -93,11 +148,15 @@ def analyze_prow_artifacts(directory_path, job_name):
     )
     build_file_path = os.path.join(directory_path, "build-log.txt")
     if not os.path.isfile(build_file_path):
-        return (
-            ["Prow maintanence issues, couldn't even find the build-log.txt file"],
-            MAINTENANCE_ISSUE,
-            False,
-            True,
+        return ProwAnalysisResult(
+            errors=[
+                "Prow maintanence issues, couldn't even find the build-log.txt file"
+            ],
+            categorization_message=MAINTENANCE_ISSUE,
+            requires_llm=False,
+            is_install_issue=True,
+            step_name=None,
+            full_errors_for_file=None,
         )
     with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
         matched_line = next(
@@ -112,7 +171,14 @@ def analyze_prow_artifacts(directory_path, job_name):
             matched_line = (
                 "Couldn't identify the failure step, likely a maintanence issue"
             )
-            return [matched_line], MAINTENANCE_ISSUE, False, True
+            return ProwAnalysisResult(
+                errors=[matched_line],
+                categorization_message=MAINTENANCE_ISSUE,
+                requires_llm=False,
+                is_install_issue=True,
+                step_name=None,
+                full_errors_for_file=None,
+            )
     junit_operator_file_path = os.path.join(directory_path, "junit_operator.xml")
     # Defaults in case XML parsing yields no values
     step_phase, step_name, step_summary = None, None, ""
@@ -130,45 +196,57 @@ def analyze_prow_artifacts(directory_path, job_name):
                 e,
             )
         if step_name and step_phase:
-            categorization_message = categorize_prow_failure(step_name, step_phase)
+            categorization_message = categorize_prow_failure(
+                step_name, step_phase, job_name
+            )
         else:
-            categorization_message = categorize_prow_failure(matched_line, "unknown")
+            categorization_message = categorize_prow_failure(
+                matched_line, "unknown", job_name
+            )
             step_summary = ""
     cluster_operators_file_path = os.path.join(directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
         with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
             build_log_content = list(deque(f, maxlen=BUILD_LOG_TAIL))
-        return (
-            [
+        return ProwAnalysisResult(
+            errors=[
                 "\n Somehow couldn't find clusteroperators.json file",
                 matched_line + "\n",
                 (step_summary or "") + "\n".join(build_log_content),
             ],
-            categorization_message,
-            False,
-            False,
+            categorization_message=categorization_message,
+            requires_llm=False,
+            is_install_issue=False,
+            step_name=step_name,
+            full_errors_for_file=None,
         )
     cluster_operator_errors = get_cluster_operator_errors(directory_path)
     if len(cluster_operator_errors) == 0:
-        orion_errors = scan_orion_jsons(directory_path)
-        if len(orion_errors) == 0:
-            return (
-                [matched_line]
+        orion_preview, orion_full = scan_orion_jsons(directory_path)
+        if len(orion_preview) == 0:
+            return ProwAnalysisResult(
+                errors=[matched_line]
                 + [step_summary or ""]
                 + search_prow_errors(directory_path, job_name),
-                categorization_message,
-                True,
-                False,
+                categorization_message=categorization_message,
+                requires_llm=True,
+                is_install_issue=False,
+                step_name=step_name,
+                full_errors_for_file=None,
             )
-        return (
-            [matched_line + "\n"] + orion_errors,
-            categorization_message,
-            False,
-            False,
+        return ProwAnalysisResult(
+            errors=[matched_line + "\n"] + orion_preview,
+            categorization_message=categorization_message,
+            requires_llm=False,
+            is_install_issue=False,
+            step_name=step_name,
+            full_errors_for_file=[matched_line + "\n"] + orion_full,
         )
-    return (
-        [matched_line + "\n"] + cluster_operator_errors,
-        categorization_message,
-        False,
-        False,
+    return ProwAnalysisResult(
+        errors=[matched_line + "\n"] + cluster_operator_errors,
+        categorization_message=categorization_message,
+        requires_llm=False,
+        is_install_issue=False,
+        step_name=step_name,
+        full_errors_for_file=None,
     )
