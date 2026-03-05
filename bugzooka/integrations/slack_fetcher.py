@@ -230,7 +230,9 @@ class SlackMessageFetcher(SlackClientBase):
             header_text += f"<{viz_url}|View Changepoint Visualization>\n"
         header_text += "\nError Logs Preview"
 
-        needs_file = len(errors_for_file) > preview_limit
+        needs_file = errors_for_file != errors_preview and (
+            is_changepoint or len(errors_for_file) > preview_limit
+        )
 
         # Always post the preview message first
         message_block = self.get_slack_message_blocks(
