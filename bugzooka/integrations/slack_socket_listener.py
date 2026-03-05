@@ -99,12 +99,12 @@ class SlackSocketListener(SlackClientBase):
         self.logger.info(f"📩 Processing mention from {user} at ts {ts}")
 
         # Check if message contains "analyze pr"
-        if "analyze pr" in text.lower():
+        if "diff analyze" in text.lower():
             try:
                 # Send initial acknowledgment
                 self.client.chat_postMessage(
                     channel=channel,
-                    text="🔍 Analyzing PR performance... This may take a few moments.",
+                    text="🔍 Analyzing PR performance (with diff context)... This may take a few moments.",
                     thread_ts=ts,
                 )
 
@@ -310,7 +310,7 @@ class SlackSocketListener(SlackClientBase):
                 channel = event.get("channel")
                 try:
                     self.client.reactions_add(
-                        name="eyes",
+                        name="mag",
                         channel=channel,
                         timestamp=ts,
                     )
