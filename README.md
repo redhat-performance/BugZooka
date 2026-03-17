@@ -122,10 +122,10 @@ BugZooka can generate a configurable performance summary across metrics for one 
 - Socket Mode has to be enabled.
 - Default output shows per-config tables sorted by absolute Change (%).
 - The formula for min/max/avg/change shown in the table are:
-min = min(values in the current lookback window)
-max = max(values in the current lookback window)
-avg = sum(values in current lookback window) / number of values
-change (%) = ((current_avg - previous_avg) / previous_avg) * 100
+    min = min(values in the current lookback window)
+    max = max(values in the current lookback window)
+    avg = sum(values in current lookback window) / number of values
+    change (%) = ((current_avg - previous_avg) / previous_avg) * 100
 
 ### **Supported Bot Triggers**
 #### **Job Summary**
