@@ -56,7 +56,7 @@
         <a href="#commands" class="nav-link">Commands</a>
         <a href="#integrations" class="nav-link">Integrations</a>
         <a href="#community" class="nav-link">Community</a>
-        <a href="https://github.com/mohit-sheth/BugZooka" target="_blank" rel="noopener" class="github-btn">
+        <a href="https://github.com/redhat-performance/BugZooka" target="_blank" rel="noopener" class="github-btn">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           GitHub
         </a>
@@ -82,7 +82,7 @@
           </p>
           <div class="hero-actions">
             <a href="#getting-started" class="btn btn-primary">Get Started</a>
-            <a href="https://github.com/mohit-sheth/BugZooka" target="_blank" rel="noopener" class="btn btn-secondary">
+            <a href="https://github.com/redhat-performance/BugZooka" target="_blank" rel="noopener" class="btn btn-secondary">
               <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
               View on GitHub
             </a>
@@ -255,7 +255,7 @@
               </div>
               <div class="code-body">
 <pre><span class="comment"># Clone and setup</span>
-git clone https://github.com/mohit-sheth/BugZooka.git
+git clone https://github.com/redhat-performance/BugZooka.git
 <span class="keyword">cd</span> BugZooka
 python -m venv venv
 <span class="keyword">source</span> venv/bin/activate
@@ -379,19 +379,19 @@ kustomize build ./kustomize | envsubst | oc delete -f -</pre>
             </div>
             <ul class="command-examples">
               <li data-preview="Nightly 4.22.0-0.nightly-2026-01-05:\nChecked 12 configs over 15 days\nChangepoints found: 2\nRegression: node-density-heavy (+8.3% latency)">
-                <code>@BugZooka inspect &lt;nightly&gt;</code>
+                <code>@PerfScale Jedi inspect &lt;nightly&gt;</code>
                 <span>Check if a nightly build has regressed (15-day lookback)</span>
               </li>
               <li data-preview="Comparing across 30 day window...\nChangepoints found: 4\nMost significant: cluster-density p99 +15%">
-                <code>@BugZooka inspect &lt;nightly&gt; for N days</code>
+                <code>@PerfScale Jedi inspect &lt;nightly&gt; for N days</code>
                 <span>Custom lookback period</span>
               </li>
               <li data-preview="Comparing nightly A vs B:\nBetter: 6 metrics\nWorse: 1 metric (pod-latency +4.1%)\nNeutral: 5 metrics">
-                <code>@BugZooka inspect &lt;a&gt; vs &lt;b&gt;</code>
+                <code>@PerfScale Jedi inspect &lt;a&gt; vs &lt;b&gt;</code>
                 <span>Compare two nightly builds</span>
               </li>
               <li data-preview="Config: trt-external-payload-node-density.yaml\nChecked nightly for this config only\nNo regression detected. All clear.">
-                <code>@BugZooka inspect &lt;nightly&gt; for config &lt;file&gt;</code>
+                <code>@PerfScale Jedi inspect &lt;nightly&gt; for config &lt;file&gt;</code>
                 <span>Inspect a specific orion config</span>
               </li>
             </ul>
@@ -407,7 +407,7 @@ kustomize build ./kustomize | envsubst | oc delete -f -</pre>
             </div>
             <ul class="command-examples">
               <li data-preview="PR #2924 Performance Report:\nThroughput: +3.2% vs 4.20 baseline\nP99 Latency: -12ms improvement\nNo regressions detected.">
-                <code>@BugZooka analyze pr: &lt;PR URL&gt;, compare with 4.20</code>
+                <code>@PerfScale Jedi analyze pr: &lt;PR URL&gt;, compare with 4.20</code>
                 <span>Analyze PR performance against a specific version</span>
               </li>
             </ul>
@@ -486,14 +486,14 @@ kustomize build ./kustomize | envsubst | oc delete -f -</pre>
         <p>BugZooka is open source. Contributions, issues, and feedback are welcome.</p>
       </div>
       <div class="community-actions reveal">
-        <a href="https://github.com/mohit-sheth/BugZooka" target="_blank" rel="noopener" class="btn btn-primary">
+        <a href="https://github.com/redhat-performance/BugZooka" target="_blank" rel="noopener" class="btn btn-primary">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           Star on GitHub
         </a>
-        <a href="https://github.com/mohit-sheth/BugZooka/issues" target="_blank" rel="noopener" class="btn btn-secondary">
+        <a href="https://github.com/redhat-performance/BugZooka/issues" target="_blank" rel="noopener" class="btn btn-secondary">
           Found a bug? How ironic.
         </a>
-        <a href="https://github.com/mohit-sheth/BugZooka/pulls" target="_blank" rel="noopener" class="btn btn-secondary">
+        <a href="https://github.com/redhat-performance/BugZooka/pulls" target="_blank" rel="noopener" class="btn btn-secondary">
           Submit a PR
         </a>
       </div>
@@ -520,9 +520,9 @@ kustomize build ./kustomize | envsubst | oc delete -f -</pre>
           </div>
           <div class="footer-col">
             <h4>Resources</h4>
-            <a href="https://github.com/mohit-sheth/BugZooka" target="_blank" rel="noopener">GitHub</a>
-            <a href="https://github.com/mohit-sheth/BugZooka/issues" target="_blank" rel="noopener">Found a bug? How ironic. &#x1F41B;</a>
-            <a href="https://github.com/mohit-sheth/BugZooka/pulls" target="_blank" rel="noopener">Pull Requests</a>
+            <a href="https://github.com/redhat-performance/BugZooka" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/redhat-performance/BugZooka/issues" target="_blank" rel="noopener">Found a bug? How ironic. &#x1F41B;</a>
+            <a href="https://github.com/redhat-performance/BugZooka/pulls" target="_blank" rel="noopener">Pull Requests</a>
           </div>
           <div class="footer-col">
             <h4>Related</h4>
