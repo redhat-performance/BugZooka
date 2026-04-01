@@ -10,17 +10,16 @@ from unittest.mock import MagicMock, patch
 
 from tests.helpers import CHANNEL_ID, create_test_messages, verify_slack_messages
 from bugzooka.integrations.slack_fetcher import SlackMessageFetcher
-from bugzooka.analysis.prow_analyzer import ProwAnalysisResult
 from bugzooka.integrations.inference_client import InferenceAPIUnavailableError
 
 
-MOCK_PROW_ANALYSIS = ProwAnalysisResult(
-    errors=["ERROR test failure"],
-    categorization_message="test phase: openshift-qe sample failure",
-    requires_llm=False,
-    is_install_issue=False,
-    step_name=None,
-    full_errors_for_file=None,
+MOCK_ANALYSIS_RESULT = (
+    ["ERROR test failure"],
+    "test phase: openshift-qe sample failure",
+    False,
+    False,
+    None,
+    None,
 )
 
 
@@ -53,18 +52,7 @@ def run_slack_fetcher_test(
     mock_conversations_history = mock_slack_conversations_history(test_messages)
     mock_analysis = patch(
         "bugzooka.integrations.slack_fetcher.download_and_analyze_logs",
-        return_value=MOCK_PROW_ANALYSIS,
-    )
-    mock_job_history_check = patch(
-        "bugzooka.integrations.slack_fetcher.check_url_ok",
-        return_value=(True, 200),
-    )
-    mock_job_history_stats = patch(
-        "bugzooka.integrations.slack_fetcher.fetch_job_history_stats",
-        return_value=(2, 10, 20, ":grey_exclamation:"),
-    )
-    mock_rag_disabled = patch.object(
-        SlackMessageFetcher, "_is_rag_enabled", return_value=False
+        return_value=MOCK_ANALYSIS_RESULT,
     )
 
     with patch("bugzooka.integrations.slack_client_base.WebClient") as mock_web_client:
@@ -111,33 +99,30 @@ def run_slack_fetcher_test(
             )
 
         with mock_analysis:
-            with mock_job_history_check:
-                with mock_job_history_stats:
-                    with mock_rag_disabled:
-                        with filter_mock:
-                            with analysis_mock:
-                                # Create fetcher and run one fetch cycle
-                                logger = logging.getLogger("test")
-                                fetcher = SlackMessageFetcher(
-                                    channel_id=CHANNEL_ID, logger=logger
-                                )
+            with filter_mock:
+                with analysis_mock:
+                    # Create fetcher and run one fetch cycle
+                    logger = logging.getLogger("test")
+                    fetcher = SlackMessageFetcher(channel_id=CHANNEL_ID, logger=logger)
 
-                                fetcher.fetch_messages(
-                                    enable_inference=enable_inference,
-                                )
+                    fetcher.fetch_messages(
+                        enable_inference=enable_inference,
+                    )
 
     return posted_messages
 
 
 class TestSlackFetcher:
-    def test_failure_processing_inference_enabled(
+    def test_error_processing_inference_enabled(
         self,
         mock_slack_post_message,
         mock_slack_file_upload,
         mock_slack_conversations_history,
     ):
-        """Test processing failure messages with inference enabled."""
-        test_messages = create_test_messages(include_error=True, include_success=False)
+        """Test processing error messages with inference enabled."""
+        test_messages = create_test_messages(
+            include_error=True, include_success=False, error_status="error"
+        )
 
         posted_messages = run_slack_fetcher_test(
             test_messages=test_messages,
@@ -149,14 +134,16 @@ class TestSlackFetcher:
 
         verify_slack_messages(posted_messages)
 
-    def test_failure_processing_inference_disabled(
+    def test_error_processing_inference_disabled(
         self,
         mock_slack_post_message,
         mock_slack_file_upload,
         mock_slack_conversations_history,
     ):
-        """Test processing failure messages with inference disabled still provides rule based analysis."""
-        test_messages = create_test_messages(include_error=True, include_success=False)
+        """Test processing error messages with inference disabled still provides rule based analysis."""
+        test_messages = create_test_messages(
+            include_error=True, include_success=False, error_status="error"
+        )
 
         posted_messages = run_slack_fetcher_test(
             test_messages=test_messages,
@@ -168,14 +155,16 @@ class TestSlackFetcher:
 
         verify_slack_messages(posted_messages, inference_enabled=False)
 
-    def test_failure_processing_inference_enabled_but_unavailable(
+    def test_error_processing_inference_enabled_but_unavailable(
         self,
         mock_slack_post_message,
         mock_slack_file_upload,
         mock_slack_conversations_history,
     ):
-        """Test processing failure messages with inference enabled but inference API unavailable."""
-        test_messages = create_test_messages(include_error=True, include_success=False)
+        """Test processing error messages with inference enabled but inference API unavailable."""
+        test_messages = create_test_messages(
+            include_error=True, include_success=False, error_status="error"
+        )
 
         posted_messages = run_slack_fetcher_test(
             test_messages=test_messages,
@@ -248,8 +237,8 @@ class TestSlackFetcher:
 
             with patch(
                 "bugzooka.integrations.slack_fetcher.download_and_analyze_logs",
-                return_value=MOCK_PROW_ANALYSIS,
-            ) as download_mock:
+                return_value=MOCK_ANALYSIS_RESULT,
+            ):
                 logger = logging.getLogger("test")
                 fetcher = SlackMessageFetcher(channel_id=CHANNEL_ID, logger=logger)
 
@@ -271,4 +260,3 @@ class TestSlackFetcher:
         assert version_counts == {"4.20": 2}
         assert version_type_counts == {"4.20": {"Workload": 2}}
         assert len(version_type_messages["4.20"]["Workload"]) == 2
-        assert download_mock.call_count == 2
