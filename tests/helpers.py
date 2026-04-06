@@ -134,13 +134,16 @@ def verify_slack_messages(
         )
 
 
-def create_test_messages(include_error=True, include_success=False):
+def create_test_messages(
+    include_error=True, include_success=False, error_status="failure"
+):
     """
     Create test message arrays for different scenarios.
 
     Args:
         include_error (bool): Whether to include error messages with real Prow URLs
         include_success (bool): Whether to include success messages
+        error_status (str): Job ending status for the failing/error case
 
     Returns:
         list: Array of test messages in Slack format
@@ -151,7 +154,7 @@ def create_test_messages(include_error=True, include_success=False):
         messages.append(
             {
                 "user": "U12345",
-                "text": "Job periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-aws-4.20-nightly-x86-udn-density-l3-24nodes ended with failure. View logs: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-aws-4.20-nightly-x86-udn-density-l3-24nodes/1960160453627744256",
+                "text": f"Job periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-aws-4.20-nightly-x86-udn-density-l3-24nodes ended with {error_status}. View logs: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-eng-ocp-qe-perfscale-ci-main-aws-4.20-nightly-x86-udn-density-l3-24nodes/1960160453627744256",
                 "ts": THREAD_TS_1,
             }
         )
