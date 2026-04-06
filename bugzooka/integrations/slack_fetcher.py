@@ -370,12 +370,9 @@ class SlackMessageFetcher(SlackClientBase):
                 total_jobs += 1
                 text_lower = text.lower()
 
-                # Robust failure detection (case-insensitive, tolerate punctuation/emojis)
-                if (
-                    "ended with failure" in text_lower
-                    or "ended with error" in text_lower
-                    or "ended with *failure*" in text_lower
-                    or "ended with *error*" in text_lower
+                # Robust failure detection (case-insensitive; bold *failure*/*error* still match)
+                if "ended with" in text_lower and (
+                    "failure" in text_lower or "error" in text_lower
                 ):
                     total_failures += 1
                     # Extract OpenShift version like 4.19, 4.20, etc., if present
@@ -473,11 +470,9 @@ class SlackMessageFetcher(SlackClientBase):
             return ts
 
         # No weekly trigger; dynamic summarize only
-        if (
-            "ended with failure" not in text_lower
-            and "ended with error" not in text_lower
-            and "ended with *failure*" not in text_lower
-            and "ended with *error*" not in text_lower
+        if not (
+            "ended with" in text_lower
+            and ("failure" in text_lower or "error" in text_lower)
         ):
             self.logger.info("Not a failure or error job, skipping")
             return ts
