@@ -120,9 +120,7 @@ class TestSlackFetcher:
         mock_slack_conversations_history,
     ):
         """Test processing error messages with inference enabled."""
-        test_messages = create_test_messages(
-            include_error=True, include_success=False, error_status="error"
-        )
+        test_messages = create_test_messages(include_error=True, include_success=False)
 
         posted_messages = run_slack_fetcher_test(
             test_messages=test_messages,
@@ -162,9 +160,7 @@ class TestSlackFetcher:
         mock_slack_conversations_history,
     ):
         """Test processing error messages with inference enabled but inference API unavailable."""
-        test_messages = create_test_messages(
-            include_error=True, include_success=False, error_status="error"
-        )
+        test_messages = create_test_messages(include_error=True, include_success=False)
 
         posted_messages = run_slack_fetcher_test(
             test_messages=test_messages,
