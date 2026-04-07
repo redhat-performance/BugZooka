@@ -121,6 +121,16 @@ BugZooka can generate a configurable performance summary across metrics for one 
 - `ALL` uses all 41 available Orion configs (fallback list is used if MCP is unavailable).
 - Socket Mode has to be enabled.
 - Default output shows per-config tables sorted by absolute Change (%).
+* The formula for min/max/avg/change shown in the table are:
+    * min = min(values in the current lookback window)
+    * max = max(values in the current lookback window)
+    * avg = sum(values in current lookback window) / number of values
+    * change (%) = ((current_avg - previous_avg) / previous_avg) * 100
+
+* Example (7-day lookback with dates):
+    * Current window (Mar 10–Mar 16): 100, 105, 98, 102, 101, 99, 103 → avg = 101.14, min = 98, max = 105
+    * Previous window (Mar 3–Mar 9): 95, 97, 96, 98, 99, 100, 97 → avg = 97.43
+    * Change (%): ((101.14 − 97.43) ÷ 97.43) × 100 = **+3.81%**
 
 ### **Supported Bot Triggers**
 #### **Job Summary**
