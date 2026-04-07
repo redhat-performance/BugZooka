@@ -154,44 +154,96 @@ def download_prow_logs(url, output_dir="/tmp/"):
 
 def construct_visualization_url(view_url, step_name):
     """
-    Build a gcsweb URL pointing to the step's artifacts directory.
+    Build gcsweb URL(s) pointing to visualization artifacts.
+
+    For deferred report steps (step_name contains 'orion-report'),
+    returns a dict mapping test names to their viz URLs.
+    For regular orion steps, returns a single URL string.
 
     :param view_url: prow view URL
     :param step_name: raw step name from junit_operator.xml
-    :return: gcsweb URL string, or None if the log folder cannot be resolved
+    :return: str, dict[str, str], or None
+    """
+    if step_name and "orion-report" in step_name:
+        return _construct_deferred_viz_urls(view_url, step_name)
+    return _construct_single_viz_url(view_url, step_name)
+
+
+def _find_step_artifacts(view_url, step_name):
+    """
+    Walk GCS artifact folders to locate the step's artifacts directory.
+
+    Yields (files, base_url) tuples where *files* is the list returned by
+    ``list_gcs_files`` and *base_url* is the gcsweb prefix for that directory.
+    Typically only one match exists, but callers may iterate if needed.
+    """
+    gcs_path = view_url.split("view/gs/")[1]
+    base = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/"
+    artifact_root = f"gs://{gcs_path}/artifacts/"
+    top_folders = list_gcs_files(artifact_root)
+
+    for entry in top_folders:
+        if not entry.rstrip().endswith("/"):
+            continue
+        folder = entry.strip("/").split("/")[-1]
+        candidates = [step_name]
+        prefix = folder + "-"
+        if step_name.startswith(prefix):
+            candidates.insert(0, step_name[len(prefix):])
+        for candidate in candidates:
+            step_artifacts = f"{artifact_root}{folder}/{candidate}/artifacts/"
+            try:
+                files = list_gcs_files(step_artifacts)
+            except Exception:
+                continue
+            artifacts_url = (
+                f"{base}{gcs_path}/artifacts/{folder}/{candidate}/artifacts/"
+            )
+            yield files, artifacts_url
+
+
+def _construct_deferred_viz_urls(view_url, step_name):
+    """
+    For the deferred orion-report step, find all viz HTML files
+    in the step's artifacts and return a dict of {test_name: url}.
     """
     try:
-        gcs_path = view_url.split("view/gs/")[1]
-        base = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/"
-        artifact_root = f"gs://{gcs_path}/artifacts/"
-        top_folders = list_gcs_files(artifact_root)
-
-        # Find the folder that actually contains the step as a subfolder.
-        # The junit step_name often includes the log_folder as a prefix
-        # (e.g. "payload-control-plane-6nodes-openshift-qe-orion-udn-density")
-        # while the GCS folder is just "openshift-qe-orion-udn-density".
-        for entry in top_folders:
-            if not entry.rstrip().endswith("/"):
+        for files, artifacts_url in _find_step_artifacts(view_url, step_name):
+            html_files = [f for f in files if f.endswith("_viz.html")]
+            if not html_files:
                 continue
-            folder = entry.strip("/").split("/")[-1]
-            # Try with prefix stripped first, then the raw step_name
-            candidates = [step_name]
-            prefix = folder + "-"
-            if step_name.startswith(prefix):
-                candidates.insert(0, step_name[len(prefix) :])
-            for candidate in candidates:
-                step_artifacts = f"{artifact_root}{folder}/{candidate}/artifacts/"
-                try:
-                    files = list_gcs_files(step_artifacts)
-                except Exception:
-                    continue
-                artifacts_path = f"{gcs_path}/artifacts/{folder}/{candidate}/artifacts/"
-                html_files = [f for f in files if f.endswith(".html")]
-                if html_files:
-                    html_name = html_files[0].strip("/").split("/")[-1]
-                    return f"{base}{artifacts_path}{html_name}"
-                return f"{base}{artifacts_path}"
+            viz_urls = {}
+            for html in html_files:
+                html_name = html.strip("/").split("/")[-1]
+                # Extract test name from filename pattern:
+                # orion-{config}-output_{testname}_viz.html
+                test_name = html_name
+                if "_viz.html" in html_name:
+                    parts = html_name.rsplit("_viz.html", 1)[0]
+                    if "-output_" in parts:
+                        test_name = parts.split("-output_")[-1]
+                    elif "output_" in parts:
+                        test_name = parts.split("output_")[-1]
+                viz_urls[test_name] = f"{artifacts_url}{html_name}"
+            return viz_urls if viz_urls else None
+        return None
+    except Exception as e:
+        logger.error("Failed to construct deferred viz URLs: %s", e)
+        return None
 
+
+def _construct_single_viz_url(view_url, step_name):
+    """
+    Build a gcsweb URL pointing to a single step's viz HTML.
+    Original behavior for non-deferred orion steps.
+    """
+    try:
+        for files, artifacts_url in _find_step_artifacts(view_url, step_name):
+            html_files = [f for f in files if f.endswith(".html")]
+            if html_files:
+                html_name = html_files[0].strip("/").split("/")[-1]
+                return f"{artifacts_url}{html_name}"
+            return artifacts_url
         return None
     except Exception as e:
         logger.error("Failed to construct visualization URL: %s", e)
