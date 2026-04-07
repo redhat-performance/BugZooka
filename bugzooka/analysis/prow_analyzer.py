@@ -61,12 +61,19 @@ def scan_orion_jsons(directory_path):
     """
     Extracts errors from orion jsons.
 
+    Looks in {directory_path}/orion/ first (non-deferred mode).
+    Falls back to {directory_path}/orion-*.json (deferred report mode
+    where JSONs are copied from SHARED_DIR to the step's artifacts).
+
     :param directory_path: directory path for the artifacts
     :return: tuple of (preview_results, full_results) where preview has
              truncated PRs and full has all PRs
     """
     base_dir = Path(f"{directory_path}/orion")
-    json_files = base_dir.glob("*.json")
+    json_files = list(base_dir.glob("*.json"))
+    # Fallback: deferred mode stores orion-*.json in artifacts root
+    if not json_files:
+        json_files = list(Path(directory_path).glob("orion-*.json"))
     preview_results = []
     full_results = []
     for json_file in json_files:

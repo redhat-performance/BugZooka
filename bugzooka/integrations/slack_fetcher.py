@@ -226,7 +226,13 @@ class SlackMessageFetcher(SlackClientBase):
         )
         failure_desc = self._get_failure_desc(categorization_message)
         header_text = f":red_circle: *{failure_desc}* :red_circle:\n"
-        if viz_url:
+        if isinstance(viz_url, dict):
+            for test_name, url in viz_url.items():
+                header_text += (
+                    f"<{url}|{test_name} regression>"
+                    " :chart_with_upwards_trend:\n"
+                )
+        elif viz_url:
             header_text += f"<{viz_url}|View Changepoint Visualization>\n"
         header_text += "\nError Logs Preview"
 
