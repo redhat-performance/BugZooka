@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Optional, NamedTuple
 
 from bugzooka.core.constants import BUILD_LOG_TAIL, MAINTENANCE_ISSUE
+from bugzooka.core.utils import strip_step_prefixes
 from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.analysis.log_summarizer import search_prow_errors
 from bugzooka.analysis.xmlparser import summarize_junit_operator_xml
-from bugzooka.analysis.jsonparser import extract_json_changepoints
 
 logger = logging.getLogger(__name__)
 
@@ -57,29 +57,98 @@ def get_cluster_operator_errors(directory_path):
         return []
 
 
+def _build_changepoint_preview(json_data, test_label):
+    """
+    Build a compact preview string for a single test's changepoints.
+
+    :param json_data: parsed orion JSON array
+    :param test_label: cleaned test name for display
+    :return: list of formatted preview lines, empty if no changepoints
+    """
+    cp_entries = [e for e in json_data if e.get("is_changepoint", False)]
+    if not cp_entries:
+        return []
+
+    lines = []
+    for entry in cp_entries:
+        metrics = entry.get("metrics", {})
+        regressed = []
+        for name, data in metrics.items():
+            pct = data.get("percentage_change", 0)
+            if pct != 0:
+                sign = "+" if pct > 0 else ""
+                regressed.append(f"{name}: {sign}{pct:.2f}%")
+        if not regressed:
+            continue
+
+        if not lines:
+            lines.append(f"\n[{test_label}]")
+
+        github_ctx = entry.get("github_context") or {}
+        version = github_ctx.get(
+            "current_version", entry.get("ocpVersion", "unknown")
+        )
+        prs = entry.get("prs", [])
+        lines.append(f"  {', '.join(regressed)}")
+        lines.append(f"  Changepoint at: {version}")
+        if prs:
+            lines.append(f"  PRs: {len(prs)} in payload")
+    return lines
+
+
 def scan_orion_jsons(directory_path):
     """
-    Extracts errors from orion jsons.
+    Extracts changepoint data from orion results.
+
+    Looks in {directory_path}/orion/ first (non-deferred mode).
+    Falls back to junit_*.json or output_*.json in {directory_path}
+    (deferred report mode where JSONs are copied from SHARED_DIR).
+
+    For full results, uses orion-report-summary.txt if available (written
+    by the orion --report step), otherwise falls back to JSON parsing.
 
     :param directory_path: directory path for the artifacts
-    :return: tuple of (preview_results, full_results) where preview has
-             truncated PRs and full has all PRs
+    :return: tuple of (preview_results, full_results)
     """
     base_dir = Path(f"{directory_path}/orion")
-    json_files = base_dir.glob("*.json")
+    json_files = list(base_dir.glob("*.json"))
+    # Fallback: deferred mode copies junit_*.json (or output_*.json from
+    # local orion runs) to the report step's artifacts
+    if not json_files:
+        root = Path(directory_path)
+        json_files = list(root.glob("junit_*.json")) or list(root.glob("output_*.json"))
+
+    # Build lightweight preview from JSONs
     preview_results = []
-    full_results = []
+    has_changepoints = False
     for json_file in json_files:
         try:
             with open(json_file, "r") as f:
                 json_data = json.load(f)
             if isinstance(json_data, list):
-                full = extract_json_changepoints(json_data)
-                preview = extract_json_changepoints(json_data, max_prs=5)
-                full_results.extend(full)
-                preview_results.extend(preview)
+                test_label = strip_step_prefixes(json_file.stem)
+                preview = _build_changepoint_preview(json_data, test_label)
+                if preview:
+                    has_changepoints = True
+                    preview_results.extend(preview)
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Failed to parse orion JSON '%s': %s", json_file, e)
+
+    if not has_changepoints:
+        return [], []
+
+    # Full results: use orion report summary if available
+    report_file = Path(directory_path) / "orion-report-summary.txt"
+    if report_file.exists():
+        try:
+            full_results = [report_file.read_text(encoding="utf-8")]
+        except OSError as e:
+            logger.warning("Failed to read report summary: %s", e)
+            full_results = preview_results
+    else:
+        # Non-deferred mode: use preview as full (no report step ran)
+        full_results = list(preview_results)
+
     return preview_results, full_results
 
 

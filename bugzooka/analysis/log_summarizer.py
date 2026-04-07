@@ -5,14 +5,17 @@ import subprocess
 from typing import List, Tuple, Optional
 import requests
 
-from bugzooka.core.constants import MAX_CONTEXT_SIZE
+from bugzooka.core.constants import GCSWEB_BASE_URL, MAX_CONTEXT_SIZE
 from bugzooka.analysis.prompts import ERROR_SUMMARIZATION_PROMPT
 from bugzooka.analysis.failure_keywords import FAILURE_KEYWORDS
 from bugzooka.core.utils import (
     download_file_from_gcs,
+    extract_gcs_path,
     filter_most_frequent_errors,
+    gcs_basename,
     list_gcs_files,
     run_shell_command,
+    strip_step_prefixes,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,9 +59,9 @@ def get_prow_inner_artifact_files(gcs_path):
     # Identify nested log folder (match last segment with gcs_path)
     log_folder = next(
         (
-            f.strip("/").split("/")[-1]
+            gcs_basename(f)
             for f in top_files
-            if f.strip("/").split("/")[-1] in gcs_path
+            if gcs_basename(f) in gcs_path
         ),
         None,
     )
@@ -71,27 +74,43 @@ def get_prow_inner_artifact_files(gcs_path):
     return log_folder_path, inner_files
 
 
-def download_prow_orion_jsons(gcs_path, output_dir):
+def list_orion_step_dirs(gcs_path, exclude_report=False):
     """
-    Downloads all orion jsons to the output directory.
+    Discover orion step directories under a Prow job's artifacts.
 
-    :param gcs_path: path in gcs storage
+    :param gcs_path: raw GCS path (no gs:// prefix)
+    :param exclude_report: if True, skip folders containing 'orion-report'
+    :return: list of (folder_name, step_artifacts_gcs_path) tuples
+    """
+    log_folder_path, inner_files = get_prow_inner_artifact_files(gcs_path)
+    if not log_folder_path:
+        return []
+
+    results = []
+    for f in inner_files:
+        if not f.rstrip().endswith("/"):
+            continue
+        folder = gcs_basename(f)
+        if "orion" not in folder:
+            continue
+        if exclude_report and "orion-report" in folder:
+            continue
+        results.append((folder, f"{log_folder_path}{folder}/artifacts/"))
+    return results
+
+
+def download_prow_orion_jsons(step_dirs, output_dir):
+    """
+    Downloads orion jsons from pre-discovered step directories.
+
+    :param step_dirs: list of (folder, artifacts_gcs_path) tuples
     :param output_dir: output directory to store artifacts
     :return: None
     """
     try:
-        log_folder_path, inner_files = get_prow_inner_artifact_files(gcs_path)
-        if not log_folder_path:
-            return
-
-        orion_folders = [
-            f.strip("/").split("/")[-1] for f in inner_files if "orion" in f
-        ]
-
         orion_jsons = []
-        for folder in orion_folders:
-            json_path = f"{log_folder_path}{folder}/artifacts/"
-            json_files = list_gcs_files(json_path)
+        for _, step_artifacts in step_dirs:
+            json_files = list_gcs_files(step_artifacts)
             orion_jsons.extend(f for f in json_files if f.endswith(".json"))
 
         for json_url in orion_jsons:
@@ -99,6 +118,28 @@ def download_prow_orion_jsons(gcs_path, output_dir):
 
     except subprocess.CalledProcessError as e:
         logger.error("Error processing Orion JSONs: %s", e.stderr)
+
+
+def download_prow_orion_report_summary(step_dirs, output_dir):
+    """
+    Download orion-report-summary.txt from the report step's artifacts.
+
+    :param step_dirs: list of (folder, artifacts_gcs_path) tuples
+                      (should include the report step)
+    :param output_dir: output directory to store the summary file
+    :return: None
+    """
+    try:
+        for folder, step_artifacts in step_dirs:
+            if "orion-report" not in folder:
+                continue
+            files = list_gcs_files(step_artifacts)
+            for f in files:
+                if gcs_basename(f) == "orion-report-summary.txt":
+                    download_file_from_gcs(f, output_dir)
+                    return
+    except subprocess.CalledProcessError as e:
+        logger.error("Error downloading orion report summary: %s", e.stderr)
 
 
 def download_prow_cluster_operators(gcs_path, output_dir):
@@ -137,7 +178,7 @@ def download_prow_logs(url, output_dir="/tmp/"):
     if "view/gs/" not in url:
         raise ValueError("Invalid Prow URL: GCS path not found.")
 
-    gcs_path = url.split("view/gs/")[1]
+    gcs_path = extract_gcs_path(url)
 
     log_dir = os.path.join(output_dir, build_id)
     orion_dir = os.path.join(log_dir, "orion")
@@ -147,51 +188,92 @@ def download_prow_logs(url, output_dir="/tmp/"):
     download_prow_build_log(gcs_path, log_dir)
     download_prow_junit_operator_xml(gcs_path, log_dir)
     download_prow_cluster_operators(gcs_path, log_dir)
-    download_prow_orion_jsons(gcs_path, orion_dir)
+
+    # Discover orion step dirs once to avoid redundant GCS listings
+    all_step_dirs = list_orion_step_dirs(gcs_path)
+    individual_dirs = [(f, p) for f, p in all_step_dirs if "orion-report" not in f]
+    download_prow_orion_jsons(individual_dirs, orion_dir)
+    download_prow_orion_report_summary(all_step_dirs, log_dir)
 
     return log_dir
 
 
 def construct_visualization_url(view_url, step_name):
     """
-    Build a gcsweb URL pointing to the step's artifacts directory.
+    Build gcsweb URL(s) pointing to visualization artifacts.
+
+    For deferred report steps (step_name contains 'orion-report'),
+    returns a dict mapping test names to their viz URLs by scanning
+    the individual orion step directories.
+    For regular orion steps, returns a single URL string.
 
     :param view_url: prow view URL
     :param step_name: raw step name from junit_operator.xml
-    :return: gcsweb URL string, or None if the log folder cannot be resolved
+    :return: str, dict[str, str], or None
+    """
+    if step_name and "orion-report" in step_name:
+        return _construct_deferred_viz_urls(view_url)
+    return _construct_single_viz_url(view_url, step_name)
+
+
+def _construct_deferred_viz_urls(view_url):
+    """
+    For the deferred orion-report step, find viz HTML files in each
+    individual orion step's artifacts directory and return a dict of
+    {test_name: url}.
     """
     try:
-        gcs_path = view_url.split("view/gs/")[1]
-        base = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/"
+        gcs_path = extract_gcs_path(view_url)
+        viz_urls = {}
+        for folder, step_artifacts in list_orion_step_dirs(gcs_path, exclude_report=True):
+            try:
+                files = list_gcs_files(step_artifacts)
+            except Exception:
+                continue
+            html_files = [f for f in files if f.endswith(".html")]
+            if html_files:
+                html_name = gcs_basename(html_files[0])
+                test_name = strip_step_prefixes(folder)
+                artifacts_url = f"{GCSWEB_BASE_URL}{step_artifacts.replace('gs://', '')}"
+                viz_urls[test_name] = f"{artifacts_url}{html_name}"
+
+        return viz_urls if viz_urls else None
+    except Exception as e:
+        logger.error("Failed to construct deferred viz URLs: %s", e)
+        return None
+
+
+def _construct_single_viz_url(view_url, step_name):
+    """
+    Build a gcsweb URL pointing to a single step's viz HTML.
+    """
+    try:
+        gcs_path = extract_gcs_path(view_url)
         artifact_root = f"gs://{gcs_path}/artifacts/"
         top_folders = list_gcs_files(artifact_root)
 
-        # Find the folder that actually contains the step as a subfolder.
-        # The junit step_name often includes the log_folder as a prefix
-        # (e.g. "payload-control-plane-6nodes-openshift-qe-orion-udn-density")
-        # while the GCS folder is just "openshift-qe-orion-udn-density".
         for entry in top_folders:
             if not entry.rstrip().endswith("/"):
                 continue
-            folder = entry.strip("/").split("/")[-1]
-            # Try with prefix stripped first, then the raw step_name
+            folder = gcs_basename(entry)
             candidates = [step_name]
             prefix = folder + "-"
             if step_name.startswith(prefix):
-                candidates.insert(0, step_name[len(prefix) :])
+                candidates.insert(0, step_name[len(prefix):])
             for candidate in candidates:
                 step_artifacts = f"{artifact_root}{folder}/{candidate}/artifacts/"
                 try:
                     files = list_gcs_files(step_artifacts)
                 except Exception:
                     continue
-                artifacts_path = f"{gcs_path}/artifacts/{folder}/{candidate}/artifacts/"
+                artifacts_url = (
+                    f"{GCSWEB_BASE_URL}{gcs_path}/artifacts/"
+                    f"{folder}/{candidate}/artifacts/"
+                )
                 html_files = [f for f in files if f.endswith(".html")]
                 if html_files:
-                    html_name = html_files[0].strip("/").split("/")[-1]
-                    return f"{base}{artifacts_path}{html_name}"
-                return f"{base}{artifacts_path}"
-
+                    return f"{artifacts_url}{gcs_basename(html_files[0])}"
+                return artifacts_url
         return None
     except Exception as e:
         logger.error("Failed to construct visualization URL: %s", e)

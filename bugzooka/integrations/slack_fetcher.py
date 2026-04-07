@@ -226,7 +226,22 @@ class SlackMessageFetcher(SlackClientBase):
         )
         failure_desc = self._get_failure_desc(categorization_message)
         header_text = f":red_circle: *{failure_desc}* :red_circle:\n"
-        if viz_url:
+        if isinstance(viz_url, dict):
+            # Extract test labels that have changepoints from preview
+            cp_labels = set()
+            for err in (errors_list or []):
+                for line in err.split("\n"):
+                    line = line.strip()
+                    if line.startswith("[") and line.endswith("]"):
+                        cp_labels.add(line[1:-1])
+            for test_name, url in viz_url.items():
+                if cp_labels:
+                    has_cp = any(test_name in label for label in cp_labels)
+                    marker = ":warning:" if has_cp else ":white_check_mark:"
+                else:
+                    marker = ":chart_with_upwards_trend:"
+                header_text += f"{marker} <{url}|{test_name}>\n"
+        elif viz_url:
             header_text += f"<{viz_url}|View Changepoint Visualization>\n"
         header_text += "\nError Logs Preview"
 
@@ -509,14 +524,6 @@ class SlackMessageFetcher(SlackClientBase):
 
         # Upload full error log just before job history
         if pending_file:
-            if is_changepoint and view_url:
-                lines = pending_file.split("\n")
-                new_lines = []
-                for line in lines:
-                    new_lines.append(line)
-                    if line.startswith("Previous:"):
-                        new_lines.append(f"Build URL: {view_url}")
-                pending_file = "\n".join(new_lines)
             self._upload_full_error_log(pending_file, ts)
 
         # Add job-history info in the thread after the full error log
