@@ -8,6 +8,42 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def gcs_basename(path):
+    """Return the last path component of a GCS path, stripping trailing slashes."""
+    return path.strip("/").split("/")[-1]
+
+
+def extract_gcs_path(view_url):
+    """
+    Extract the GCS path portion from a Prow view URL.
+
+    :param view_url: e.g. https://prow.ci.../view/gs/bucket/path/123
+    :return: 'bucket/path/123'
+    """
+    return view_url.split("view/gs/")[1]
+
+
+def strip_step_prefixes(name):
+    """
+    Strip common CI step/artifact prefixes for cleaner display names.
+
+    Handles prefixes like 'openshift-qe-', 'orion-', 'junit_'.
+
+    :param name: raw step or artifact folder name
+    :return: cleaned display name
+    """
+    for prefix in ("junit_", "output_"):
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+    if name.startswith("payload-"):
+        name = name[len("payload-"):]
+    name = re.sub(r"^openshift-qe-", "", name)
+    if name.startswith("orion-"):
+        name = name[len("orion-"):]
+    return name
+
+
 def extract_job_details(text):
     """
     Extract the name and hyperlink (URL).
@@ -61,7 +97,7 @@ def download_file_from_gcs(gcs_url, local_path):
     :return: None
     """
     command = f"gsutil -m cp -r {gcs_url} {local_path}"
-    file_name = gcs_url.strip("/").split("/")[-1]
+    file_name = gcs_basename(gcs_url)
     try:
         logger.info("Downloading %s...", file_name)
         subprocess.run(command, shell=True, check=True)
