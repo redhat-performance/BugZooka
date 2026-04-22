@@ -128,14 +128,28 @@ class ESEncryptionInterceptor:
 
     def _is_orion_tool(self, tool_name: str) -> bool:
         """
-        Check if tool is from orion-mcp server.
+        Check if tool is from orion-mcp server and needs ES encryption.
 
-        All orion-mcp tools follow the naming convention: orion_*
+        Only tools that query Elasticsearch require encrypted ES config.
+        Tools like get_release_date (returns dict) and get_orion_configs (returns list)
+        don't access ES and are excluded.
 
         :param tool_name: Name of the MCP tool
-        :return: True if tool is from orion-mcp, False otherwise
+        :return: True if tool needs ES encryption, False otherwise
         """
-        return tool_name.startswith("orion_")
+        # orion-mcp tools that query Elasticsearch and need encrypted config
+        es_tools = {
+            "get_orion_metrics",
+            "get_orion_metrics_with_meta",
+            "openshift_report_on",
+            "get_orion_performance_data",
+            "openshift_report_on_pr",
+            "has_openshift_regressed",
+            "has_networking_regressed",
+            "metrics_correlation",
+            "has_nightly_regressed",
+        }
+        return tool_name in es_tools
 
 
 def create_es_interceptor(es_channel_mappings: dict) -> ESEncryptionInterceptor:
