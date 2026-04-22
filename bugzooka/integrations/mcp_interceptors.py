@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 # Context variable to track current Slack channel
 # This is set by analyzers before calling MCP tools and read by interceptor
-# Automatically isolated per thread/async task (no race conditions)
 current_channel: ContextVar[str] = ContextVar('current_channel', default=None)
 
 
