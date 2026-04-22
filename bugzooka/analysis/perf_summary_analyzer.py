@@ -669,6 +669,7 @@ async def analyze_performance(
     versions: Optional[List[str]] = None,
     lookback_days: Optional[int] = None,
     use_all_configs: bool = False,
+    channel_id: str = None,
 ) -> dict:
     """
     Analyze performance metrics for the specified config and version.
@@ -680,8 +681,15 @@ async def analyze_performance(
                     (defaults to [_DEFAULT_VERSION] when empty).
                     If None or empty, uses default version.
     :param lookback_days: Lookback period in days for stats and change calculation
+    :param channel_id: Slack channel ID for ES_SERVER routing (optional)
     :return: Dict with 'success' boolean and 'message' string
     """
+    # Set channel context for ES encryption interceptor
+    if channel_id:
+        from bugzooka.integrations.mcp_interceptors import current_channel
+        current_channel.set(channel_id)
+        logger.debug("Set channel context for performance summary: %s", channel_id)
+
     logger.info(
         "analyze_performance called with configs=%s, versions=%s, lookback_days=%s, use_all_configs=%s",
         configs,

@@ -117,7 +117,7 @@ class SlackSocketListener(SlackClientBase):
                 asyncio.set_event_loop(loop)
                 try:
                     analysis_result = loop.run_until_complete(
-                        analyze_pr_with_gemini(text)
+                        analyze_pr_with_gemini(text, channel_id=channel)
                     )
                 finally:
                     loop.close()
@@ -194,7 +194,7 @@ class SlackSocketListener(SlackClientBase):
                 asyncio.set_event_loop(loop)
                 try:
                     analysis_result = loop.run_until_complete(
-                        analyze_nightly_regression(text)
+                        analyze_nightly_regression(text, channel_id=channel)
                     )
                 finally:
                     loop.close()
@@ -266,6 +266,7 @@ class SlackSocketListener(SlackClientBase):
                             versions,
                             lookback_days=lookback_days,
                             use_all_configs=use_all_configs,
+                            channel_id=channel,
                         )
                     )
                 finally:
