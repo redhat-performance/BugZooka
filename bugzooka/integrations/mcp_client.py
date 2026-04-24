@@ -16,6 +16,7 @@ async def initialize_global_resources_async(mcp_config_path: str = "mcp_config.j
     """
     Initializes the MCP client and retrieves tools.
     This version includes graceful handling for a missing mcp_config.json file.
+    Registers ES encryption interceptor for channel-based routing.
     """
     global mcp_client, mcp_tools
     # Initialize the MCP client from a config file.
@@ -26,7 +27,38 @@ async def initialize_global_resources_async(mcp_config_path: str = "mcp_config.j
         with open(mcp_config_path, "r") as f:
             config = json.load(f)
 
-        mcp_client = MultiServerMCPClient(config["mcp_servers"])
+        # Create ES encryption interceptor for channel-based routing
+        from bugzooka.integrations.mcp_interceptors import create_es_interceptor
+        from bugzooka.core.config import get_es_channel_mappings
+
+        # Load channel to ES server mappings
+        try:
+            es_channel_mappings = get_es_channel_mappings()
+            es_interceptor = create_es_interceptor(es_channel_mappings)
+            logger.info(
+                "ES encryption interceptor created with %d channel mappings",
+                len(es_channel_mappings)
+            )
+        except ValueError as e:
+            logger.warning(
+                "ES channel mappings not configured: %s. "
+                "ES encryption interceptor will not be registered. "
+                "orion-mcp will use default ES_SERVER from environment.",
+                str(e)
+            )
+            es_interceptor = None
+
+        # Initialize MCP client with interceptor (if configured)
+        if es_interceptor:
+            mcp_client = MultiServerMCPClient(
+                config["mcp_servers"],
+                tool_interceptors=[es_interceptor]
+            )
+            logger.info("MCP client initialized with ES encryption interceptor")
+        else:
+            mcp_client = MultiServerMCPClient(config["mcp_servers"])
+            logger.info("MCP client initialized without interceptors")
+
         mcp_tools = await mcp_client.get_tools()
         logger.info(f"MCP configuration loaded and {len(mcp_tools)} tools retrieved.")
 
@@ -80,10 +112,23 @@ async def invoke_mcp_tool(tool: Any, args: dict) -> str:
     else:
         result = tool.invoke(args)
 
-    if not isinstance(result, str):
-        result = str(result)
+    # Extract content from various result formats
+    # langchain-core 1.3.0+ may return ToolMessage, list of dicts, or string
+    if isinstance(result, str):
+        return result
+    elif isinstance(result, list) and len(result) > 0:
+        # List of message dicts: [{'type': 'text', 'text': '...', 'id': '...'}]
+        if isinstance(result[0], dict) and 'text' in result[0]:
+            return result[0]['text']
+        # List of ToolMessage objects
+        elif hasattr(result[0], 'content'):
+            return result[0].content
+    elif hasattr(result, 'content'):
+        # ToolMessage or similar message object
+        return result.content
 
-    return result
+    # Fallback to string conversion
+    return str(result)
 
 
 def tool_not_found_error(tool_name: str) -> dict[str, Any]:

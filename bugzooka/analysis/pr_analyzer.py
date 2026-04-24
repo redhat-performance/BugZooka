@@ -82,7 +82,7 @@ def _parse_pr_request(text: str) -> Optional[Tuple[str, str, str, str]]:
     return org, repo, pr_number, version
 
 
-async def analyze_pr_with_gemini(text: str) -> dict:
+async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
     """
     Parse PR analysis request and analyze PR performance using Gemini with MCP.
 
@@ -92,8 +92,15 @@ async def analyze_pr_with_gemini(text: str) -> dict:
     Both PR URL and OpenShift version are REQUIRED.
 
     :param text: User message text with PR URL and version (both required)
+    :param channel_id: Slack channel ID for ES_SERVER routing (optional)
     :return: Dictionary with 'success' (bool), 'message' (str), and optional 'pr_info' (tuple)
     """
+    # Set channel context for ES encryption interceptor
+    if channel_id:
+        from bugzooka.integrations.mcp_interceptors import current_channel
+        current_channel.set(channel_id)
+        logger.debug("Set channel context for PR analysis: %s", channel_id)
+
     # Parse PR request from text
     parsed = _parse_pr_request(text)
 

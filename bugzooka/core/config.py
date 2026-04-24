@@ -146,3 +146,51 @@ def configure_logging(log_level):
     }
 
     logging.config.dictConfig(log_config_dict)
+
+
+# ES Server Encryption Configuration
+ES_ENCRYPTION_KEY = os.getenv("ES_ENCRYPTION_KEY", None)
+
+
+def get_es_channel_mappings() -> dict:
+    """
+    Get ES configuration mappings for different Slack channels.
+
+    Reads ES_CHANNEL_MAPPINGS environment variable which should be a JSON
+    string mapping channel IDs to ES config dicts.
+
+    :return: Dict mapping channel_id -> es_config dict
+             es_config dict contains: es_server (required), es_metadata_index (optional), es_benchmark_index (optional)
+    :raises ValueError: If ES_CHANNEL_MAPPINGS not set or invalid JSON
+
+    Example env var:
+        ES_CHANNEL_MAPPINGS='{
+            "C12345": {
+                "es_server": "https://es-prod.example.com:9200",
+                "es_metadata_index": "perf_scale_ci*",
+                "es_benchmark_index": "ripsaw-kube-burner-*"
+            },
+            "C67890": {
+                "es_server": "https://es-staging.example.com:9200"
+            }
+        }'
+    """
+    mappings_json = os.getenv("ES_CHANNEL_MAPPINGS")
+    if not mappings_json:
+        raise ValueError(
+            "ES_CHANNEL_MAPPINGS environment variable not set. "
+            "Format: '{\"CHANNEL_ID\": \"ES_SERVER_URL\", ...}'"
+        )
+
+    try:
+        mappings = json.loads(mappings_json)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid ES_CHANNEL_MAPPINGS JSON format: {e}")
+
+    if not isinstance(mappings, dict):
+        raise ValueError("ES_CHANNEL_MAPPINGS must be a JSON object/dict")
+
+    if not mappings:
+        raise ValueError("ES_CHANNEL_MAPPINGS cannot be empty")
+
+    return mappings
