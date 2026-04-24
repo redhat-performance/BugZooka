@@ -15,3 +15,5 @@ INFERENCE_API_RETRY_BACKOFF_MULTIPLIER = 2.0
 MAINTENANCE_ISSUE = "Maintenance Issue"
 SUMMARY_LOOKBACK_SECONDS_DEFAULT = 30 * 60
 RAG_TOP_K_DEFAULT = 3
+
+GCSWEB_BASE_URL = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/"

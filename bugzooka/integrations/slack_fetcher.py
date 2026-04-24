@@ -214,6 +214,7 @@ class SlackMessageFetcher(SlackClientBase):
         is_install_issue=False,
         full_errors_for_file=None,
         viz_url=None,
+        changepoint_tests=None,
     ):
         """Send error logs preview to Slack (either as message or file)."""
         errors_preview = "\n".join(errors_list or [])
@@ -226,7 +227,14 @@ class SlackMessageFetcher(SlackClientBase):
         )
         failure_desc = self._get_failure_desc(categorization_message)
         header_text = f":red_circle: *{failure_desc}* :red_circle:\n"
-        if viz_url:
+        if isinstance(viz_url, dict):
+            for test_name, url in viz_url.items():
+                if changepoint_tests is not None:
+                    marker = ":warning:" if test_name in changepoint_tests else ":white_check_mark:"
+                else:
+                    marker = ":chart_with_upwards_trend:"
+                header_text += f"{marker} <{url}|{test_name}>\n"
+        elif viz_url:
             header_text += f"<{viz_url}|View Changepoint Visualization>\n"
         header_text += "\nError Logs Preview"
 
@@ -388,7 +396,7 @@ class SlackMessageFetcher(SlackClientBase):
                         is_install_issue,
                         _step_name,
                         _full_errors,
-                    ) = analysis
+                    ) = analysis[:6]
                     if errors_list is None:
                         category = "unknown"
                     else:
@@ -478,6 +486,7 @@ class SlackMessageFetcher(SlackClientBase):
             return ts
 
         # Extract and download logs
+        analysis = download_and_analyze_logs(text)
         (
             errors_list,
             categorization_message,
@@ -485,7 +494,8 @@ class SlackMessageFetcher(SlackClientBase):
             is_install_issue,
             step_name,
             full_errors_for_file,
-        ) = download_and_analyze_logs(text)
+        ) = analysis[:6]
+        changepoint_tests = getattr(analysis, "changepoint_tests", None)
         if errors_list is None:
             return ts
 
@@ -505,18 +515,11 @@ class SlackMessageFetcher(SlackClientBase):
             is_install_issue,
             full_errors_for_file=full_errors_for_file,
             viz_url=viz_url,
+            changepoint_tests=changepoint_tests,
         )
 
         # Upload full error log just before job history
         if pending_file:
-            if is_changepoint and view_url:
-                lines = pending_file.split("\n")
-                new_lines = []
-                for line in lines:
-                    new_lines.append(line)
-                    if line.startswith("Previous:"):
-                        new_lines.append(f"Build URL: {view_url}")
-                pending_file = "\n".join(new_lines)
             self._upload_full_error_log(pending_file, ts)
 
         # Add job-history info in the thread after the full error log

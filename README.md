@@ -387,7 +387,6 @@ BugZooka/
 │   └── analysis/                # Log analysis and processing
 │       ├── __init__.py
 │       ├── failure_keywords.py  # Failure pattern detection
-│       ├── jsonparser.py        # JSON parsing utilities
 │       ├── log_analyzer.py      # Main log analysis orchestration
 │       ├── log_summarizer.py    # Log summarization functionality
 │       ├── pr_analyzer.py       # PR performance analysis with Gemini+MCP
