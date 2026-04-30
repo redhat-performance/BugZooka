@@ -6,7 +6,8 @@ langchain-mcp-adapters ToolCallInterceptor protocol.
 
 Key components:
 - current_channel: ContextVar for tracking Slack channel across async calls
-- ESEncryptionInterceptor: Injects encrypted ES_SERVER config into request headers
+- HeaderEncryptionInterceptor: MCP hook for adding encrypted headers; today it
+  attaches per-channel ES config (es_server, indices) for orion-mcp.
 """
 import logging
 from contextvars import ContextVar
@@ -18,7 +19,7 @@ from langchain_mcp_adapters.interceptors import (
     MCPToolCallResult,
 )
 
-from bugzooka.core.es_encryption import encrypt_es_config
+from bugzooka.core.header_encryption import encrypt_es_config
 
 logger = logging.getLogger(__name__)
 
@@ -28,36 +29,51 @@ logger = logging.getLogger(__name__)
 current_channel: ContextVar[str] = ContextVar('current_channel', default=None)
 
 
-class ESEncryptionInterceptor:
+class HeaderEncryptionInterceptor:
     """
-    Interceptor that adds encrypted ES_SERVER config to MCP request headers.
+    Generic MCP interceptor for injecting encrypted HTTP headers on tool calls.
 
-    For each orion-mcp tool call:
-    1. Gets current Slack channel from context variable
-    2. Looks up ES_SERVER for that channel from mappings
-    3. Encrypts ES_SERVER config using AES-256-GCM
-    4. Adds "X-Encrypted-ES-Context" header to request
-    5. Passes modified request to next handler
+    Current use case (orion-mcp): for tools that query Elasticsearch, attach an
+    ``X-Encrypted-Context`` header whose value is AES-256-GCM ciphertext over the
+    channel's ES config JSON (``es_server`` and optional index fields from
+    ``es_config_map``). orion-mcp decrypts with ``HEADER_SYMMETRIC_KEY`` and uses
+    the config for queries. The same class pattern can later cover other encrypted
+    headers without renaming the interceptor.
 
-    Thread-safe and async-safe using context variables for channel tracking.
+    For each matching tool call:
+    1. Read Slack channel from ``current_channel`` (set by analyzers before MCP calls).
+    2. Resolve ES config for that channel from ``es_config_map``.
+    3. Encrypt JSON via ``encrypt_es_config`` (uses ``HEADER_SYMMETRIC_KEY``).
+    4. Merge ``X-Encrypted-Context`` into request headers (preserving existing headers).
+    5. Forward the modified request to the next handler.
+
+    Thread-safe and async-safe: channel is tracked with a ``ContextVar``.
     """
 
-    def __init__(self, es_channel_mappings: dict):
+    def __init__(self, es_config_map: dict):
         """
-        Initialize ES encryption interceptor.
+        Initialize the header-encryption interceptor.
 
-        :param es_channel_mappings: Dict mapping channel_id -> es_config dict
-                                   es_config dict contains: es_server, es_metadata_index, es_benchmark_index
-                                   Example: {"C12345": {"es_server": "https://es-prod.com:9200",
-                                             "es_metadata_index": "perf_scale_ci*",
-                                             "es_benchmark_index": "ripsaw-kube-burner-*"}}
+        :param es_config_map: Slack channel_id -> ES config dict. Each dict must
+            include ``es_server``; optional keys include ``es_metadata_index`` and
+            ``es_benchmark_index`` (same shape as ``ES_CHANNEL_MAPPINGS`` from config).
+
+        Example map entry::
+
+            {
+                "C12345": {
+                    "es_server": "https://es-prod.example.com:9200",
+                    "es_metadata_index": "perf_scale_ci*",
+                    "es_benchmark_index": "ripsaw-kube-burner-*",
+                }
+            }
         """
-        self.es_channel_mappings = es_channel_mappings
+        self.es_config_map = es_config_map
         logger.info(
-            "ESEncryptionInterceptor initialized with %d channel mappings",
-            len(es_channel_mappings)
+            "HeaderEncryptionInterceptor initialized with %d channel ES configs",
+            len(es_config_map),
         )
-        logger.debug("Channels configured: %s", list(es_channel_mappings.keys()))
+        logger.debug("Channels configured: %s", list(es_config_map.keys()))
 
     async def __call__(
         self,
@@ -65,78 +81,66 @@ class ESEncryptionInterceptor:
         handler: Callable[[MCPToolCallRequest], Awaitable[MCPToolCallResult]],
     ) -> MCPToolCallResult:
         """
-        Intercept MCP tool call and add encrypted ES config header if needed.
+        Intercept an MCP tool call and add the encrypted ES config header when applicable.
 
-        Implements the ToolCallInterceptor protocol from langchain-mcp-adapters.
+        Implements the ``ToolCallInterceptor`` protocol from langchain-mcp-adapters.
 
-        :param request: Original tool call request with name, args, headers, etc.
-        :param handler: Next handler in the interceptor chain
-        :return: Tool call result from downstream handlers
+        :param request: Original tool call (name, args, headers, etc.).
+        :param handler: Next handler in the interceptor chain.
+        :return: Result from downstream handlers.
         """
-        # Get current Slack channel from context variable
-        # This was set by the analyzer (e.g., analyze_pr_with_gemini)
+        # Set by analyzers (e.g. analyze_pr_with_gemini) before invoking MCP tools.
         channel_id = current_channel.get()
 
-        # Only add encryption header for orion-mcp tools when we have a channel
+        # Only enrich orion-mcp tools that hit Elasticsearch; other tools pass through.
         if channel_id and self._is_orion_tool(request.name):
             logger.debug(
                 "Intercepting orion-mcp tool call: %s (channel: %s)",
                 request.name,
-                channel_id
+                channel_id,
             )
 
             try:
-                # Encrypt ES config for this channel
-                encrypted_blob = encrypt_es_config(channel_id, self.es_channel_mappings)
-
-                # Add encrypted config to request headers
-                # Preserve any existing headers that might be present
+                encrypted_blob = encrypt_es_config(channel_id, self.es_config_map)
+                # Preserve any existing headers (e.g. Authorization).
                 new_headers = {
-                    **(request.headers or {}),  # Preserve existing headers
-                    "X-Encrypted-ES-Context": encrypted_blob,
+                    **(request.headers or {}),
+                    "X-Encrypted-Context": encrypted_blob,
                 }
 
                 logger.debug(
-                    "Added X-Encrypted-ES-Context header for channel %s (%d bytes)",
+                    "Added X-Encrypted-Context (encrypted ES config) for channel %s (%d bytes)",
                     channel_id,
-                    len(encrypted_blob)
+                    len(encrypted_blob),
                 )
 
-                # Create modified request with new headers
-                # request.override() creates a new immutable request instance
+                # Immutable request: override() returns a new instance with merged headers.
                 modified_request = request.override(headers=new_headers)
-
-                # Call next handler in chain with modified request
                 return await handler(modified_request)
 
             except Exception as e:
                 logger.error(
-                    "Error encrypting ES config for channel %s: %s",
+                    "Error encrypting ES config header for channel %s: %s",
                     channel_id,
                     str(e),
-                    exc_info=True
+                    exc_info=True,
                 )
-                # On error, pass through unmodified request
-                # This allows fallback to orion-mcp's default ES_SERVER
+                # Do not fail the tool call; orion-mcp can fall back to default ES_SERVER.
                 logger.warning(
-                    "Falling back to unmodified request (orion-mcp will use default ES_SERVER)"
+                    "Falling back to unmodified request (orion-mcp may use default ES_SERVER)"
                 )
 
-        # For non-orion tools or when no channel is set, pass through unchanged
+        # Non-orion tools, missing channel, or encryption error path: unchanged request.
         return await handler(request)
 
     def _is_orion_tool(self, tool_name: str) -> bool:
         """
-        Check if tool is from orion-mcp server and needs ES encryption.
+        Return True if this orion-mcp tool should receive the encrypted ES config header.
 
-        Only tools that query Elasticsearch require encrypted ES config.
-        Tools like get_release_date (returns dict) and get_orion_configs (returns list)
-        don't access ES and are excluded.
-
-        :param tool_name: Name of the MCP tool
-        :return: True if tool needs ES encryption, False otherwise
+        Only tools that query Elasticsearch need the header. Tools such as
+        ``get_release_date`` or ``get_orion_configs`` that do not use ES are excluded
+        (not listed in ``es_tools``).
         """
-        # orion-mcp tools that query Elasticsearch and need encrypted config
         es_tools = {
             "get_orion_metrics",
             "get_orion_metrics_with_meta",
@@ -151,24 +155,25 @@ class ESEncryptionInterceptor:
         return tool_name in es_tools
 
 
-def create_es_interceptor(es_channel_mappings: dict) -> ESEncryptionInterceptor:
+def create_header_encryption_interceptor(
+    es_config_map: dict,
+) -> HeaderEncryptionInterceptor:
     """
-    Factory function to create ES encryption interceptor.
+    Factory: build a ``HeaderEncryptionInterceptor`` from a channel -> ES config map.
 
-    :param es_channel_mappings: Dict mapping channel_id -> es_config dict
-                                es_config dict contains: es_server, es_metadata_index, es_benchmark_index
-    :return: Configured ESEncryptionInterceptor instance
+    Intended for wiring into ``MultiServerMCPClient(..., tool_interceptors=[...])``
+    after loading mappings (e.g. from ``get_es_channel_mappings()``).
 
-    Example:
-        >>> mappings = {
-        ...     "C12345": {
-        ...         "es_server": "https://es-prod.com:9200",
-        ...         "es_metadata_index": "perf_scale_ci*",
-        ...         "es_benchmark_index": "ripsaw-kube-burner-*"
-        ...     }
-        ... }
-        >>> interceptor = create_es_interceptor(mappings)
-        >>> # Pass to MultiServerMCPClient:
-        >>> client = MultiServerMCPClient(servers, tool_interceptors=[interceptor])
+    :param es_config_map: Same structure as ``ES_CHANNEL_MAPPINGS`` (see class docstring).
+    :return: Configured interceptor instance.
+
+    Example::
+
+        from bugzooka.integrations.mcp_interceptors import (
+            create_header_encryption_interceptor,
+        )
+
+        interceptor = create_header_encryption_interceptor(es_config_map)
+        client = MultiServerMCPClient(servers, tool_interceptors=[interceptor])
     """
-    return ESEncryptionInterceptor(es_channel_mappings)
+    return HeaderEncryptionInterceptor(es_config_map)

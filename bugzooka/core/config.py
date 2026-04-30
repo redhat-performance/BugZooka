@@ -148,8 +148,8 @@ def configure_logging(log_level):
     logging.config.dictConfig(log_config_dict)
 
 
-# ES Server Encryption Configuration
-ES_ENCRYPTION_KEY = os.getenv("ES_ENCRYPTION_KEY", None)
+# Symmetric key for MCP encrypted-context header
+HEADER_SYMMETRIC_KEY = os.getenv("HEADER_SYMMETRIC_KEY", None)
 
 
 def get_es_channel_mappings() -> dict:

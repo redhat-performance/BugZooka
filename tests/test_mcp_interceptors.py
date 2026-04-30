@@ -1,22 +1,21 @@
 """
 Tests for MCP interceptors module.
 
-Tests the ESEncryptionInterceptor that adds encrypted ES config
-headers to MCP tool calls.
+Tests HeaderEncryptionInterceptor (encrypted ES config MCP header).
 """
 
 import os
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from contextvars import copy_context
 
 from bugzooka.integrations.mcp_interceptors import (
-    ESEncryptionInterceptor,
+    HeaderEncryptionInterceptor,
     current_channel,
-    create_es_interceptor,
+    create_header_encryption_interceptor,
 )
-from bugzooka.core.es_encryption import generate_encryption_key, decrypt_es_server
+from tests.helpers import aes256_gcm_decrypt_blob, random_aes256_gcm_key_b64
 
 
 # Mock MCP types for testing
@@ -43,14 +42,13 @@ class MockMCPToolCallResult:
         self.content = content
 
 
-class TestESEncryptionInterceptor:
-    """Test ESEncryptionInterceptor class."""
+class TestHeaderEncryptionInterceptor:
+    """Test HeaderEncryptionInterceptor class."""
 
     @pytest.fixture
     def valid_encryption_key(self):
-        """Provide a valid encryption key in environment."""
-        key = generate_encryption_key()
-        with patch.dict(os.environ, {"ES_ENCRYPTION_KEY": key}):
+        key = random_aes256_gcm_key_b64()
+        with patch.dict(os.environ, {"HEADER_SYMMETRIC_KEY": key}):
             yield key
 
     @pytest.fixture
@@ -69,8 +67,7 @@ class TestESEncryptionInterceptor:
 
     @pytest.fixture
     def interceptor(self, es_channel_mappings):
-        """Create interceptor instance."""
-        return ESEncryptionInterceptor(es_channel_mappings)
+        return HeaderEncryptionInterceptor(es_channel_mappings)
 
     @pytest.mark.asyncio
     async def test_interceptor_adds_header_for_orion_tool(
@@ -95,12 +92,10 @@ class TestESEncryptionInterceptor:
         assert handler.called
         modified_request = handler.call_args[0][0]
 
-        # Should have added X-Encrypted-ES-Context header
-        assert "X-Encrypted-ES-Context" in modified_request.headers
+        assert "X-Encrypted-Context" in modified_request.headers
 
-        # Verify encrypted header decrypts correctly
-        encrypted_blob = modified_request.headers["X-Encrypted-ES-Context"]
-        decrypted_json = decrypt_es_server(encrypted_blob)
+        encrypted_blob = modified_request.headers["X-Encrypted-Context"]
+        decrypted_json = aes256_gcm_decrypt_blob(encrypted_blob, valid_encryption_key)
         decrypted_config = json.loads(decrypted_json)
 
         assert decrypted_config["es_server"] == "https://es-prod.example.com:9200"
@@ -123,7 +118,7 @@ class TestESEncryptionInterceptor:
 
         # Handler should be called with original request (no header added)
         modified_request = handler.call_args[0][0]
-        assert "X-Encrypted-ES-Context" not in modified_request.headers
+        assert "X-Encrypted-Context" not in modified_request.headers
 
     @pytest.mark.asyncio
     async def test_interceptor_skips_when_no_channel(self, valid_encryption_key, interceptor):
@@ -142,7 +137,7 @@ class TestESEncryptionInterceptor:
 
         # Should skip adding header
         modified_request = handler.call_args[0][0]
-        assert "X-Encrypted-ES-Context" not in modified_request.headers
+        assert "X-Encrypted-Context" not in modified_request.headers
 
     @pytest.mark.asyncio
     async def test_interceptor_preserves_existing_headers(
@@ -167,8 +162,7 @@ class TestESEncryptionInterceptor:
         assert modified_request.headers["Authorization"] == "Bearer token123"
         assert modified_request.headers["X-Custom"] == "value"
 
-        # And add new header
-        assert "X-Encrypted-ES-Context" in modified_request.headers
+        assert "X-Encrypted-Context" in modified_request.headers
 
     @pytest.mark.asyncio
     async def test_interceptor_handles_encryption_error(
@@ -189,7 +183,7 @@ class TestESEncryptionInterceptor:
         result = await interceptor(request, handler)
 
         modified_request = handler.call_args[0][0]
-        assert "X-Encrypted-ES-Context" not in modified_request.headers
+        assert "X-Encrypted-Context" not in modified_request.headers
 
     @pytest.mark.asyncio
     async def test_interceptor_returns_handler_result(self, valid_encryption_key, interceptor):
@@ -211,8 +205,7 @@ class TestIsOrionTool:
 
     @pytest.fixture
     def interceptor(self):
-        """Create minimal interceptor for testing."""
-        return ESEncryptionInterceptor({})
+        return HeaderEncryptionInterceptor({})
 
     def test_recognizes_orion_tools(self, interceptor):
         """Test that all orion-mcp tools are recognized."""
@@ -274,30 +267,28 @@ class TestCurrentChannelContextVar:
         assert current_channel.get() is None
 
 
-class TestCreateESInterceptor:
-    """Test create_es_interceptor factory function."""
+class TestCreateHeaderEncryptionInterceptor:
+    """Test create_header_encryption_interceptor factory."""
 
     def test_creates_interceptor_instance(self):
-        """Test that factory creates ESEncryptionInterceptor."""
-        mappings = {
+        es_config_map = {
             "C12345": {
                 "es_server": "https://es-prod.example.com:9200",
                 "es_metadata_index": "perf_scale_ci*",
-                "es_benchmark_index": "ripsaw-kube-burner-*"
+                "es_benchmark_index": "ripsaw-kube-burner-*",
             }
         }
 
-        interceptor = create_es_interceptor(mappings)
+        interceptor = create_header_encryption_interceptor(es_config_map)
 
-        assert isinstance(interceptor, ESEncryptionInterceptor)
-        assert interceptor.es_channel_mappings == mappings
+        assert isinstance(interceptor, HeaderEncryptionInterceptor)
+        assert interceptor.es_config_map == es_config_map
 
     def test_creates_interceptor_with_empty_mappings(self):
-        """Test that factory works with empty mappings."""
-        interceptor = create_es_interceptor({})
+        interceptor = create_header_encryption_interceptor({})
 
-        assert isinstance(interceptor, ESEncryptionInterceptor)
-        assert interceptor.es_channel_mappings == {}
+        assert isinstance(interceptor, HeaderEncryptionInterceptor)
+        assert interceptor.es_config_map == {}
 
 
 class TestInterceptorIntegration:
@@ -305,9 +296,8 @@ class TestInterceptorIntegration:
 
     @pytest.fixture
     def valid_encryption_key(self):
-        """Provide a valid encryption key in environment."""
-        key = generate_encryption_key()
-        with patch.dict(os.environ, {"ES_ENCRYPTION_KEY": key}):
+        key = random_aes256_gcm_key_b64()
+        with patch.dict(os.environ, {"HEADER_SYMMETRIC_KEY": key}):
             yield key
 
     @pytest.mark.asyncio
@@ -324,7 +314,7 @@ class TestInterceptorIntegration:
             }
         }
 
-        interceptor = ESEncryptionInterceptor(mappings)
+        interceptor = HeaderEncryptionInterceptor(mappings)
         handler = AsyncMock(return_value=MockMCPToolCallResult("result"))
         request = MockMCPToolCallRequest(name="has_nightly_regressed", args={})
 
@@ -332,8 +322,10 @@ class TestInterceptorIntegration:
         current_channel.set("C_PROD")
         await interceptor(request, handler)
         prod_request = handler.call_args[0][0]
-        prod_encrypted = prod_request.headers["X-Encrypted-ES-Context"]
-        prod_config = json.loads(decrypt_es_server(prod_encrypted))
+        prod_encrypted = prod_request.headers["X-Encrypted-Context"]
+        prod_config = json.loads(
+            aes256_gcm_decrypt_blob(prod_encrypted, valid_encryption_key)
+        )
 
         assert prod_config["es_server"] == "https://es-prod.example.com:9200"
         assert prod_config["es_metadata_index"] == "prod_ci*"
@@ -343,8 +335,10 @@ class TestInterceptorIntegration:
         current_channel.set("C_STAGING")
         await interceptor(request, handler)
         staging_request = handler.call_args[0][0]
-        staging_encrypted = staging_request.headers["X-Encrypted-ES-Context"]
-        staging_config = json.loads(decrypt_es_server(staging_encrypted))
+        staging_encrypted = staging_request.headers["X-Encrypted-Context"]
+        staging_config = json.loads(
+            aes256_gcm_decrypt_blob(staging_encrypted, valid_encryption_key)
+        )
 
         assert staging_config["es_server"] == "https://es-staging.example.com:9200"
         assert staging_config["es_metadata_index"] == "staging_ci*"

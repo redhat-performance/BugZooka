@@ -2,6 +2,15 @@
 Test helper functions for BugZooka end-to-end testing.
 """
 
+import base64
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from bugzooka.core.constants import (
+    AES_GCM_KEY_LENGTH_BYTES,
+    AES_GCM_NONCE_LENGTH_BYTES,
+)
+
 # Test constants
 CHANNEL_ID = "C1234567890"
 THREAD_TS_1 = "1756201133.123"
@@ -169,3 +178,29 @@ def create_test_messages(
         )
 
     return messages
+
+
+def random_aes256_gcm_key_b64() -> str:
+    """Return a random base64-encoded 32-byte key for AES-256-GCM tests."""
+    return base64.b64encode(AESGCM.generate_key(bit_length=256)).decode("utf-8")
+
+
+def aes256_gcm_decrypt_blob(encrypted_blob_b64: str, key_b64: str) -> str:
+    """
+    Decrypt a BugZooka/orion-mcp AES-256-GCM header blob (tests only).
+
+    Inverse of bugzooka.core.header_encryption.encrypt_payload.
+    """
+    encryption_key = base64.b64decode(key_b64)
+    if len(encryption_key) != AES_GCM_KEY_LENGTH_BYTES:
+        raise ValueError(
+            f"Key must be {AES_GCM_KEY_LENGTH_BYTES} bytes, got {len(encryption_key)}"
+        )
+    encrypted_data = base64.b64decode(encrypted_blob_b64)
+    if len(encrypted_data) < AES_GCM_NONCE_LENGTH_BYTES:
+        raise ValueError("Encrypted data too short for nonce")
+    nonce = encrypted_data[:AES_GCM_NONCE_LENGTH_BYTES]
+    ciphertext_with_tag = encrypted_data[AES_GCM_NONCE_LENGTH_BYTES:]
+    aesgcm = AESGCM(encryption_key)
+    plaintext = aesgcm.decrypt(nonce, ciphertext_with_tag, associated_data=None)
+    return plaintext.decode("utf-8")

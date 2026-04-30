@@ -14,9 +14,13 @@ mcp_tools: list = []
 
 async def initialize_global_resources_async(mcp_config_path: str = "mcp_config.json"):
     """
-    Initializes the MCP client and retrieves tools.
-    This version includes graceful handling for a missing mcp_config.json file.
-    Registers ES encryption interceptor for channel-based routing.
+    Initialize the MCP client and load tools from ``mcp_config_path``.
+
+    Handles a missing ``mcp_config.json`` without crashing. When
+    ``get_es_channel_mappings()`` succeeds, registers a ``HeaderEncryptionInterceptor``
+    so orion-mcp tool calls from a Slack context can carry an encrypted per-channel
+    ES config in ``X-Encrypted-Context``. If mappings are unset, the client starts
+    without that interceptor and orion-mcp relies on its default ``ES_SERVER``.
     """
     global mcp_client, mcp_tools
     # Initialize the MCP client from a config file.
@@ -27,34 +31,37 @@ async def initialize_global_resources_async(mcp_config_path: str = "mcp_config.j
         with open(mcp_config_path, "r") as f:
             config = json.load(f)
 
-        # Create ES encryption interceptor for channel-based routing
-        from bugzooka.integrations.mcp_interceptors import create_es_interceptor
+        # Header encryption: per-Slack-channel ES config is sent to orion-mcp on
+        # selected tools via X-Encrypted-Context (see HeaderEncryptionInterceptor).
+        from bugzooka.integrations.mcp_interceptors import (
+            create_header_encryption_interceptor,
+        )
         from bugzooka.core.config import get_es_channel_mappings
 
-        # Load channel to ES server mappings
         try:
-            es_channel_mappings = get_es_channel_mappings()
-            es_interceptor = create_es_interceptor(es_channel_mappings)
+            es_config_map = get_es_channel_mappings()
+            header_encryption_interceptor = create_header_encryption_interceptor(
+                es_config_map
+            )
             logger.info(
-                "ES encryption interceptor created with %d channel mappings",
-                len(es_channel_mappings)
+                "Header encryption interceptor registered (%d channel ES configs)",
+                len(es_config_map),
             )
         except ValueError as e:
             logger.warning(
                 "ES channel mappings not configured: %s. "
-                "ES encryption interceptor will not be registered. "
+                "Header encryption interceptor will not be registered. "
                 "orion-mcp will use default ES_SERVER from environment.",
-                str(e)
+                str(e),
             )
-            es_interceptor = None
+            header_encryption_interceptor = None
 
-        # Initialize MCP client with interceptor (if configured)
-        if es_interceptor:
+        if header_encryption_interceptor:
             mcp_client = MultiServerMCPClient(
                 config["mcp_servers"],
-                tool_interceptors=[es_interceptor]
+                tool_interceptors=[header_encryption_interceptor],
             )
-            logger.info("MCP client initialized with ES encryption interceptor")
+            logger.info("MCP client initialized with header encryption interceptor")
         else:
             mcp_client = MultiServerMCPClient(config["mcp_servers"])
             logger.info("MCP client initialized without interceptors")
