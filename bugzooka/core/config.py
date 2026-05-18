@@ -194,3 +194,53 @@ def get_es_channel_mappings() -> dict:
         raise ValueError("ES_CHANNEL_MAPPINGS cannot be empty")
 
     return mappings
+
+
+def get_telemetry_config() -> dict:
+    """
+    Get telemetry configuration from environment variables.
+
+    :return: Dict with es_server, index_prefix, flush_interval, batch_size
+    :raises ValueError: If TELEMETRY_ES_SERVER not set
+    """
+    config = {
+        "es_server": os.getenv("TELEMETRY_ES_SERVER", ""),
+        "index_prefix": os.getenv("TELEMETRY_ES_INDEX_PREFIX", "bugzooka-telemetry"),
+        "flush_interval": int(os.getenv("TELEMETRY_FLUSH_INTERVAL", "30")),
+        "batch_size": int(os.getenv("TELEMETRY_BATCH_SIZE", "50")),
+    }
+
+    if not config["es_server"]:
+        raise ValueError(
+            "TELEMETRY_ES_SERVER is required"
+        )
+
+    return config
+
+
+def get_channel_team_mappings() -> dict:
+    """
+    Get mapping of Slack channel IDs to team names for telemetry.
+
+    Reads CHANNEL_TEAM_MAPPINGS env var (JSON string). Returns empty dict if unset.
+
+    Example: CHANNEL_TEAM_MAPPINGS='{"C12345":"OCP-PerfScale","C67890":"Telco"}'
+
+    :return: Dict mapping channel_id -> team_name
+    """
+    mappings_json = os.getenv("CHANNEL_TEAM_MAPPINGS")
+    if not mappings_json:
+        return {}
+
+    try:
+        mappings = json.loads(mappings_json)
+    except json.JSONDecodeError as e:
+        logging.getLogger(__name__).warning(
+            "Invalid CHANNEL_TEAM_MAPPINGS JSON: %s, using empty mappings", e
+        )
+        return {}
+
+    if not isinstance(mappings, dict):
+        return {}
+
+    return mappings

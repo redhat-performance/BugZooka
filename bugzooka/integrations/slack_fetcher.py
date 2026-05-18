@@ -28,6 +28,7 @@ from bugzooka.integrations.inference_client import (
 )
 from bugzooka.integrations.rag_client_util import get_rag_context
 from bugzooka.integrations.slack_client_base import SlackClientBase
+from bugzooka import telemetry
 from bugzooka.core.utils import (
     to_job_history_url,
     fetch_job_history_stats,
@@ -454,6 +455,11 @@ class SlackMessageFetcher(SlackClientBase):
 
     def _handle_success_viz(self, msg):
         """Post orion visualization links for a successful job run."""
+        start_time = time.time()
+        success = False
+        error_message = None
+        error_type = None
+        msg_user = msg.get("user") or None
         try:
             text = msg.get("text", "")
             ts = msg.get("ts")
@@ -482,8 +488,23 @@ class SlackMessageFetcher(SlackClientBase):
                 thread_ts=ts,
             )
             self.logger.info("Posted orion viz links for successful job")
+            success = True
         except Exception as e:
             self.logger.error("Failed to handle success viz: %s", e)
+            error_message = str(e)
+            error_type = type(e).__name__
+        finally:
+            telemetry.emit({
+                "command": "auto_viz",
+                "trigger_type": "automatic",
+                "channel_id": self.channel_id,
+                "user_id": msg_user,
+                "success": success,
+                "error_message": error_message,
+                "error_type": error_type,
+                "duration_ms": int((time.time() - start_time) * 1000),
+                "retry_count": 0,
+            })
 
     def _process_message(self, msg, enable_inference):
         """Process a single message through the complete pipeline."""
@@ -504,11 +525,36 @@ class SlackMessageFetcher(SlackClientBase):
             lookback = int(value) * factor
             verbose = "verbose" in text_lower
             self.logger.info("Triggering time summary on demand for %s%s", value, unit)
-            self.post_time_summary(
-                thread_ts=ts,
-                lookback_seconds=lookback,
-                verbose=verbose,
-            )
+
+            start_time = time.time()
+            _success = False
+            _error_message = None
+            _error_type = None
+            _total_failures = 0
+            try:
+                _total_failures = self.post_time_summary(
+                    thread_ts=ts,
+                    lookback_seconds=lookback,
+                    verbose=verbose,
+                )
+                _success = True
+            except Exception as e:
+                _error_message = str(e)
+                _error_type = type(e).__name__
+            finally:
+                telemetry.emit({
+                    "command": "summarize",
+                    "trigger_type": "user_initiated",
+                    "channel_id": self.channel_id,
+                    "user_id": user,
+                    "success": _success,
+                    "error_message": _error_message,
+                    "error_type": _error_type,
+                    "duration_ms": int((time.time() - start_time) * 1000),
+                    "retry_count": 0,
+                    "lookback_seconds": lookback,
+                    "total_failures": _total_failures or 0,
+                })
             return ts
 
         # Handle success messages: post orion viz links if available
@@ -524,6 +570,16 @@ class SlackMessageFetcher(SlackClientBase):
             self.logger.info("Not a failure or error job, skipping")
             return ts
 
+        # --- auto_analyze telemetry tracking ---
+        _aa_start = time.time()
+        _aa_success = False
+        _aa_error_message = None
+        _aa_error_type = None
+        _aa_failure_type = None
+        _aa_used_llm = False
+        _aa_total_tokens = 0
+        _aa_retry_count = 0
+
         # Extract and download logs
         analysis = download_and_analyze_logs(text)
         (
@@ -536,7 +592,25 @@ class SlackMessageFetcher(SlackClientBase):
         ) = analysis[:6]
         changepoint_tests = getattr(analysis, "changepoint_tests", None)
         if errors_list is None:
+            telemetry.emit({
+                "command": "auto_analyze",
+                "trigger_type": "automatic",
+                "channel_id": self.channel_id,
+                "user_id": user if user != "Unknown" else None,
+                "success": True,
+                "error_message": None,
+                "error_type": None,
+                "duration_ms": int((time.time() - _aa_start) * 1000),
+                "retry_count": 0,
+                "failure_type": None,
+                "used_llm": False,
+                "total_tokens": 0,
+            })
             return ts
+
+        _aa_failure_type = classify_failure_type(
+            errors_list, categorization_message, is_install_issue
+        )
 
         # For orion/changepoint failures, include visualization link in preview
         viz_url = None
@@ -565,14 +639,40 @@ class SlackMessageFetcher(SlackClientBase):
         self._handle_job_history(thread_ts=ts, current_message=msg)
 
         if is_install_issue or not enable_inference:
+            _aa_success = True
+            telemetry.emit({
+                "command": "auto_analyze",
+                "trigger_type": "automatic",
+                "channel_id": self.channel_id,
+                "user_id": user if user != "Unknown" else None,
+                "success": _aa_success,
+                "error_message": None,
+                "error_type": None,
+                "duration_ms": int((time.time() - _aa_start) * 1000),
+                "retry_count": 0,
+                "failure_type": _aa_failure_type,
+                "used_llm": False,
+                "total_tokens": 0,
+            })
             return ts
 
         try:
             # Process with LLM
-            error_summary = filter_errors_with_llm(errors_list, requires_llm)
+            error_summary, filter_retries = filter_errors_with_llm(
+                errors_list, requires_llm
+            )
 
             # Run agent analysis
-            analysis_response = run_agent_analysis(error_summary)
+            analysis_response, agent_retries = run_agent_analysis(error_summary)
+            _aa_used_llm = True
+            _aa_retry_count = filter_retries + agent_retries
+
+            # Read accumulated token usage
+            try:
+                client = get_inference_client()
+                _aa_total_tokens = client.last_total_tokens
+            except Exception:
+                pass
 
             # Optionally augment with RAG-aware prompt when RAG_IMAGE is set
             combined_response = analysis_response
@@ -610,18 +710,41 @@ class SlackMessageFetcher(SlackClientBase):
 
             # Send final analysis (possibly augmented)
             self._send_analysis_result(combined_response, ts)
+            _aa_success = True
 
         except InferenceAPIUnavailableError as e:
             self.logger.warning(
                 "Skipping LLM analysis due to inference API unavailability: %s", e
             )
             self._send_analysis_unavailable_message(ts)
+            _aa_error_message = str(e)
+            _aa_error_type = "inference_error"
+            _aa_used_llm = True
+            _aa_success = True
         except AgentAnalysisLimitExceededError as e:
             self.logger.warning(
                 "Skipping agent analysis due to iteration/time limits: %s", e
             )
             self._send_analysis_unavailable_message(ts)
+            _aa_error_message = str(e)
+            _aa_error_type = "timeout"
+            _aa_used_llm = True
+            _aa_success = True
 
+        telemetry.emit({
+            "command": "auto_analyze",
+            "trigger_type": "automatic",
+            "channel_id": self.channel_id,
+            "user_id": user if user != "Unknown" else None,
+            "success": _aa_success,
+            "error_message": _aa_error_message,
+            "error_type": _aa_error_type,
+            "duration_ms": int((time.time() - _aa_start) * 1000),
+            "retry_count": _aa_retry_count,
+            "failure_type": _aa_failure_type,
+            "used_llm": _aa_used_llm,
+            "total_tokens": _aa_total_tokens,
+        })
         return ts
 
     def fetch_messages(self, **kwargs):
@@ -699,6 +822,8 @@ class SlackMessageFetcher(SlackClientBase):
     def post_time_summary(self, **kwargs):
         """
         Fetch messages from the last lookback_seconds, aggregate failures by type, and post a summary.
+
+        :return: total_failures count (int)
         """
         try:
             thread_ts: Optional[str] = kwargs.get("thread_ts")
@@ -749,10 +874,13 @@ class SlackMessageFetcher(SlackClientBase):
                         blocks=message_block,
                         thread_ts=thread_ts,
                     )
+            return total_failures
         except SlackApiError as e:
             self.logger.error(f"❌ Slack API Error (summary): {e.response['error']}")
+            return 0
         except Exception as e:
             self.logger.error(f"⚠️ Unexpected Error in summary: {str(e)}")
+            return 0
 
     def run(self, **kwargs):
         """

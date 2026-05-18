@@ -4,6 +4,8 @@ import os
 import signal
 import threading
 
+from bugzooka import telemetry
+
 from bugzooka.core.config import (
     SLACK_CHANNEL_ID,
     configure_logging,
@@ -47,6 +49,8 @@ def main() -> None:
     configure_logging(args.log_level)
     logger = logging.getLogger(__name__)
 
+    telemetry.start()
+
     kwargs = {
         "enable_inference": args.enable_inference,
     }
@@ -78,6 +82,7 @@ def main() -> None:
         logger.info("Received shutdown signal")
         if listener:
             listener.shutdown(signum, frame)
+        telemetry.shutdown()
         fetcher.shutdown(signum, frame)
 
     signal.signal(signal.SIGINT, shutdown_handler)
