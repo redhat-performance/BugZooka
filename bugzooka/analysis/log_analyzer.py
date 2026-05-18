@@ -142,7 +142,10 @@ def download_and_analyze_logs(text):
 
 
 def filter_errors_with_llm(errors_list, requires_llm):
-    """Filter errors using LLM."""
+    """Filter errors using LLM.
+
+    :return: Tuple of (result_text, retry_count)
+    """
     client = get_inference_client()
 
     @_with_retry
@@ -170,11 +173,16 @@ def filter_errors_with_llm(errors_list, requires_llm):
         message = client.chat(messages=error_prompt)
         return message.content or ""
 
-    return _filter()
+    result = _filter()
+    retry_count = _filter.statistics.get("attempt_number", 1) - 1
+    return result, retry_count
 
 
 def run_agent_analysis(error_summary):
-    """Run agent analysis on the error summary with retry logic."""
+    """Run agent analysis on the error summary with retry logic.
+
+    :return: Tuple of (result_text, retry_count)
+    """
 
     async def _run_async():
         if mcp_module.mcp_client is None:
@@ -217,4 +225,6 @@ def run_agent_analysis(error_summary):
                 f"Unhandled error during analysis: {type(e).__name__}: {str(e)}"
             ) from e
 
-    return _run()
+    result = _run()
+    retry_count = _run.statistics.get("attempt_number", 1) - 1
+    return result, retry_count

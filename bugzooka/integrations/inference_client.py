@@ -122,6 +122,10 @@ class InferenceClient:
         self.frequency_penalty = frequency_penalty
         self.retry_config = retry_config
 
+        # Telemetry accumulators (reset per agentic call)
+        self.last_total_tokens = 0
+        self.last_tool_calls_count = 0
+
         # Create custom HTTP client with SSL configuration
         if not verify_ssl:
             logger.warning("SSL certificate verification disabled for %s", base_url)
@@ -193,6 +197,7 @@ class InferenceClient:
             response = self.client.chat.completions.create(**api_kwargs)
 
             # Log token usage if available
+            usage_data = None
             if hasattr(response, "usage") and response.usage:
                 usage = response.usage
                 logger.info(
@@ -201,8 +206,18 @@ class InferenceClient:
                     usage.completion_tokens,
                     usage.total_tokens,
                 )
+                usage_data = {
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                }
 
-            return response.choices[0].message
+            message = response.choices[0].message
+            try:
+                message._token_usage = usage_data
+            except (AttributeError, TypeError):
+                object.__setattr__(message, "_token_usage", usage_data)
+            return message
 
         except httpx.TimeoutException as e:
             logger.error("Request timed out after %s seconds: %s", self.timeout, e)
@@ -254,6 +269,9 @@ class InferenceClient:
         """
         logger.debug("Starting agentic loop with %d messages", len(messages))
 
+        total_tokens_accumulated = 0
+        tool_calls_count = 0
+
         iteration = 0
         while iteration < max_iterations:
             iteration += 1
@@ -266,6 +284,11 @@ class InferenceClient:
                 temperature=temperature,
                 tools=tools,
             )
+
+            if hasattr(message, "_token_usage") and message._token_usage:
+                total_tokens_accumulated += message._token_usage.get(
+                    "total_tokens", 0
+                )
 
             tool_calls = getattr(message, "tool_calls", None)
 
@@ -281,9 +304,12 @@ class InferenceClient:
                 else:
                     logger.warning("LLM returned None content, using empty string")
                     content = ""
+                self.last_total_tokens = total_tokens_accumulated
+                self.last_tool_calls_count = tool_calls_count
                 return content
 
             # LLM wants to call tools - execute them
+            tool_calls_count += len(tool_calls)
             tool_names_called = [tc.function.name for tc in tool_calls]
             logger.info(
                 "Calling %d tool(s): %s", len(tool_calls), ", ".join(tool_names_called)
@@ -339,6 +365,8 @@ class InferenceClient:
         logger.warning(
             "Reached maximum iterations (%d) without final answer", max_iterations
         )
+        self.last_total_tokens = total_tokens_accumulated
+        self.last_tool_calls_count = tool_calls_count
         return "Analysis incomplete: Maximum tool calling iterations reached. Please try again with a simpler query."
 
 

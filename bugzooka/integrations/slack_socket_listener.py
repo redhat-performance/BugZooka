@@ -7,6 +7,7 @@ import asyncio
 import concurrent.futures
 import logging
 import sys
+import time
 from threading import Lock, Event
 from typing import Dict, Any, Set
 
@@ -25,6 +26,7 @@ from bugzooka.analysis.perf_summary_analyzer import (
     parse_perf_summary_args,
 )
 from bugzooka.integrations.slack_client_base import SlackClientBase
+from bugzooka import telemetry
 
 
 class SlackSocketListener(SlackClientBase):
@@ -104,6 +106,13 @@ class SlackSocketListener(SlackClientBase):
 
         # Check if message contains "analyze pr"
         if "analyze pr" in text.lower():
+            _start = time.time()
+            _success = False
+            _error_message = None
+            _error_type = None
+            _pr_repo = None
+            _total_tokens = 0
+            _tool_calls_count = 0
             try:
                 # Send initial acknowledgment
                 self.client.chat_postMessage(
@@ -160,6 +169,7 @@ class SlackSocketListener(SlackClientBase):
 
                 if analysis_result["success"]:
                     org, repo, pr_number, version = analysis_result["pr_info"]
+                    _pr_repo = f"{org}/{repo}"
                     self.logger.info(
                         f"✅ Sent PR analysis for {org}/{repo}#{pr_number} (OpenShift {version}) to {user}"
                     )
@@ -167,6 +177,18 @@ class SlackSocketListener(SlackClientBase):
                     self.logger.warning(
                         f"⚠️ PR analysis failed: {analysis_result['message']}"
                     )
+                _success = True
+
+                try:
+                    from bugzooka.integrations.inference_client import (
+                        get_inference_client,
+                    )
+
+                    client = get_inference_client()
+                    _total_tokens = client.last_total_tokens
+                    _tool_calls_count = client.last_tool_calls_count
+                except Exception:
+                    pass
 
             except Exception as e:
                 self.logger.error(
@@ -177,10 +199,32 @@ class SlackSocketListener(SlackClientBase):
                     text=f"❌ Unexpected error: {str(e)}",
                     thread_ts=ts,
                 )
+                _error_message = str(e)
+                _error_type = type(e).__name__
+            finally:
+                telemetry.emit({
+                    "command": "analyze_pr",
+                    "trigger_type": "user_initiated",
+                    "channel_id": channel,
+                    "user_id": user,
+                    "success": _success,
+                    "error_message": _error_message,
+                    "error_type": _error_type,
+                    "duration_ms": int((time.time() - _start) * 1000),
+                    "retry_count": 0,
+                    "pr_repo": _pr_repo,
+                    "total_tokens": _total_tokens,
+                    "tool_calls_count": _tool_calls_count,
+                })
             return
 
         # Check if message contains "inspect" for nightly regression analysis
         if "inspect" in text.lower():
+            _start = time.time()
+            _success = False
+            _error_message = None
+            _error_type = None
+            _nightly_version = None
             try:
                 # Send initial acknowledgment
                 self.client.chat_postMessage(
@@ -217,6 +261,7 @@ class SlackSocketListener(SlackClientBase):
                             config,
                             lookback,
                         ) = nightly_info
+                        _nightly_version = nightly_version
                         self.logger.info(
                             f"Sent nightly regression analysis for {nightly_version} to {user}"
                         )
@@ -226,6 +271,7 @@ class SlackSocketListener(SlackClientBase):
                     self.logger.warning(
                         f"Nightly regression analysis failed: {analysis_result['message']}"
                     )
+                _success = True
 
             except Exception as e:
                 self.logger.error(
@@ -236,10 +282,31 @@ class SlackSocketListener(SlackClientBase):
                     text=f"Unexpected error: {str(e)}",
                     thread_ts=ts,
                 )
+                _error_message = str(e)
+                _error_type = "mcp_error"
+            finally:
+                telemetry.emit({
+                    "command": "inspect_nightly",
+                    "trigger_type": "user_initiated",
+                    "channel_id": channel,
+                    "user_id": user,
+                    "success": _success,
+                    "error_message": _error_message,
+                    "error_type": _error_type,
+                    "duration_ms": int((time.time() - _start) * 1000),
+                    "retry_count": 0,
+                    "nightly_version": _nightly_version,
+                })
             return
 
         # Check if message contains "performance summary"
         if "performance summary" in text.lower():
+            _start = time.time()
+            _success = False
+            _error_message = None
+            _error_type = None
+            _configs_count = 0
+            _versions_count = 0
             try:
                 # Send initial acknowledgment
                 self.client.chat_postMessage(
@@ -255,6 +322,8 @@ class SlackSocketListener(SlackClientBase):
                     lookback_days,
                     use_all_configs,
                 ) = parse_perf_summary_args(text)
+                _configs_count = len(configs)
+                _versions_count = len(versions)
 
                 # Run async function in sync context
                 loop = asyncio.new_event_loop()
@@ -293,6 +362,7 @@ class SlackSocketListener(SlackClientBase):
                     self.logger.warning(
                         f"⚠️ Performance summary failed: {result.get('message')}"
                     )
+                _success = True
 
             except Exception as e:
                 self.logger.error(
@@ -303,9 +373,29 @@ class SlackSocketListener(SlackClientBase):
                     text=f"❌ Unexpected error: {str(e)}",
                     thread_ts=ts,
                 )
+                _error_message = str(e)
+                _error_type = "mcp_error"
+            finally:
+                telemetry.emit({
+                    "command": "perf_summary",
+                    "trigger_type": "user_initiated",
+                    "channel_id": channel,
+                    "user_id": user,
+                    "success": _success,
+                    "error_message": _error_message,
+                    "error_type": _error_type,
+                    "duration_ms": int((time.time() - _start) * 1000),
+                    "retry_count": 0,
+                    "configs_count": _configs_count,
+                    "versions_count": _versions_count,
+                })
             return
 
         # Default: Send simple greeting message
+        _start = time.time()
+        _success = False
+        _error_message = None
+        _error_type = None
         try:
             self.client.chat_postMessage(
                 channel=channel,
@@ -317,8 +407,23 @@ class SlackSocketListener(SlackClientBase):
                 thread_ts=ts,
             )
             self.logger.info(f"✅ Sent greeting to {user}")
+            _success = True
         except Exception as e:
             self.logger.error(f"Error sending message: {e}", exc_info=True)
+            _error_message = str(e)
+            _error_type = "slack_api_error"
+        finally:
+            telemetry.emit({
+                "command": "help",
+                "trigger_type": "user_initiated",
+                "channel_id": channel,
+                "user_id": user,
+                "success": _success,
+                "error_message": _error_message,
+                "error_type": _error_type,
+                "duration_ms": int((time.time() - _start) * 1000),
+                "retry_count": 0,
+            })
 
     def _submit_mention_for_processing(self, event: Dict[str, Any]) -> None:
         """
