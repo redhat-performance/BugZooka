@@ -91,11 +91,11 @@ def run_slack_fetcher_test(
             # Mock inference functions to return successful responses
             filter_mock = patch(
                 "bugzooka.integrations.slack_fetcher.filter_errors_with_llm",
-                return_value="Some filtered error summary from logs",
+                return_value=("Some filtered error summary from logs", 0),
             )
             analysis_mock = patch(
                 "bugzooka.integrations.slack_fetcher.run_agent_analysis",
-                return_value="Some recommended actions.",
+                return_value=("Some recommended actions.", 0),
             )
 
         with mock_analysis:

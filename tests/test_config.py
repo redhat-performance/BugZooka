@@ -9,7 +9,11 @@ import json
 import pytest
 from unittest.mock import patch
 
-from bugzooka.core.config import get_es_channel_mappings
+from bugzooka.core.config import (
+    get_es_channel_mappings,
+    get_telemetry_config,
+    get_channel_team_mappings,
+)
 
 
 class TestGetESChannelMappings:
@@ -182,3 +186,76 @@ class TestGetESChannelMappings:
             assert result["C_TEAM_A"]["es_server"] == result["C_TEAM_B"]["es_server"]
             assert result["C_TEAM_A"]["es_metadata_index"] != result["C_TEAM_B"]["es_metadata_index"]
             assert result["C_TEAM_A"]["es_benchmark_index"] != result["C_TEAM_B"]["es_benchmark_index"]
+
+
+class TestGetTelemetryConfig:
+    """Test get_telemetry_config function."""
+
+    def test_valid_config_with_defaults(self):
+        """Test valid config with only required TELEMETRY_ES_SERVER set."""
+        env = {"TELEMETRY_ES_SERVER": "https://es.example.com:9200"}
+        with patch.dict(os.environ, env, clear=True):
+            config = get_telemetry_config()
+
+            assert config["es_server"] == "https://es.example.com:9200"
+            assert config["index_prefix"] == "bugzooka-telemetry"
+            assert config["flush_interval"] == 30
+            assert config["batch_size"] == 50
+
+    def test_valid_config_with_overrides(self):
+        """Test config with all values overridden."""
+        env = {
+            "TELEMETRY_ES_SERVER": "https://es.example.com:9200",
+            "TELEMETRY_ES_INDEX_PREFIX": "custom-prefix",
+            "TELEMETRY_FLUSH_INTERVAL": "10",
+            "TELEMETRY_BATCH_SIZE": "100",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = get_telemetry_config()
+
+            assert config["index_prefix"] == "custom-prefix"
+            assert config["flush_interval"] == 10
+            assert config["batch_size"] == 100
+
+    def test_missing_es_server_raises_error(self):
+        """Test that missing TELEMETRY_ES_SERVER raises ValueError."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError, match="TELEMETRY_ES_SERVER is required"):
+                get_telemetry_config()
+
+    def test_es_server_with_credentials_in_url(self):
+        """Test ES server URL with embedded credentials."""
+        url = "https://user:pass@es.example.com:9200"
+        with patch.dict(os.environ, {"TELEMETRY_ES_SERVER": url}, clear=True):
+            config = get_telemetry_config()
+            assert config["es_server"] == url
+
+
+class TestGetChannelTeamMappings:
+    """Test get_channel_team_mappings function."""
+
+    def test_valid_mappings(self):
+        """Test parsing valid channel-team mappings."""
+        mappings = json.dumps({"C12345": "OCP-PerfScale", "C67890": "Telco"})
+        with patch.dict(os.environ, {"CHANNEL_TEAM_MAPPINGS": mappings}):
+            result = get_channel_team_mappings()
+
+            assert result == {"C12345": "OCP-PerfScale", "C67890": "Telco"}
+
+    def test_missing_env_var_returns_empty(self):
+        """Test that missing CHANNEL_TEAM_MAPPINGS returns empty dict."""
+        with patch.dict(os.environ, {}, clear=True):
+            result = get_channel_team_mappings()
+            assert result == {}
+
+    def test_invalid_json_returns_empty(self):
+        """Test that invalid JSON returns empty dict with warning."""
+        with patch.dict(os.environ, {"CHANNEL_TEAM_MAPPINGS": "not json"}):
+            result = get_channel_team_mappings()
+            assert result == {}
+
+    def test_non_dict_json_returns_empty(self):
+        """Test that non-dict JSON returns empty dict."""
+        with patch.dict(os.environ, {"CHANNEL_TEAM_MAPPINGS": '["a","b"]'}):
+            result = get_channel_team_mappings()
+            assert result == {}
