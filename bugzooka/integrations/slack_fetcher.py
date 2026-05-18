@@ -384,8 +384,8 @@ class SlackMessageFetcher(SlackClientBase):
                     "failure" in text_lower or "error" in text_lower
                 ):
                     total_failures += 1
-                    # Extract OpenShift version like 4.19, 4.20, etc., if present
-                    vm = re.search(r"\b4\.\d{1,2}\b", text_lower)
+                    # Extract OpenShift version like 4.19, 4.20, 5.0 etc., if present
+                    vm = re.search(r"\b\d+\.\d{1,2}\b", text_lower)
                     v = vm.group(0) if vm else None
                     if v:
                         version_counts[v] = version_counts.get(v, 0) + 1
