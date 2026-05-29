@@ -1,3 +1,5 @@
+import gzip
+import json
 import logging
 import os
 import re
@@ -379,6 +381,156 @@ def generate_prompt(error_list):
         {"role": "assistant", "content": ERROR_SUMMARIZATION_PROMPT["assistant"]},
     ]
     return messages
+
+
+# ---------------------------------------------------------------------------
+# Node journal RCA helpers
+# ---------------------------------------------------------------------------
+
+
+def find_pod_latency_file(gcs_path: str, log_folder: str) -> Optional[str]:
+    """
+    Locate podLatencyMeasurement-*.json under a prow artifact directory by
+    listing GCS at each variable path segment.
+
+    Expected layout:
+        gs://<gcs_path>/artifacts/<log_folder>/openshift-qe-*/
+            artifacts/collected-metrics-<uuid>/podLatencyMeasurement-*.json
+
+    :param gcs_path: raw GCS path without gs:// prefix
+    :param log_folder: inner log folder name (from get_prow_inner_artifact_files)
+    :return: full gs:// URL of the JSON file, or None if not found
+    """
+    base = f"gs://{gcs_path}/artifacts/{log_folder}/"
+    try:
+        top_entries = list_gcs_files(base)
+    except Exception as exc:
+        logger.error("find_pod_latency_file: cannot list %s: %s", base, exc)
+        return None
+
+    # Find openshift-qe-* step directories
+    qe_dirs = [e for e in top_entries if e.rstrip("/").endswith("/")
+               and "openshift-qe-" in gcs_basename(e.rstrip("/"))]
+    if not qe_dirs:
+        logger.info("find_pod_latency_file: no openshift-qe-* dirs under %s", base)
+        return None
+
+    for qe_dir in qe_dirs:
+        artifacts_path = qe_dir.rstrip("/") + "/artifacts/"
+        try:
+            artifacts_entries = list_gcs_files(artifacts_path)
+        except Exception:
+            continue
+
+        metrics_dirs = [
+            e for e in artifacts_entries
+            if e.rstrip("/").endswith("/") and "collected-metrics-" in gcs_basename(e.rstrip("/"))
+        ]
+        for metrics_dir in metrics_dirs:
+            try:
+                files = list_gcs_files(metrics_dir.rstrip("/") + "/")
+            except Exception:
+                continue
+            for f in files:
+                name = gcs_basename(f.rstrip("/"))
+                if name.startswith("podLatencyMeasurement-") and name.endswith(".json"):
+                    return f.rstrip()
+
+    logger.info("find_pod_latency_file: no podLatencyMeasurement JSON found under %s", base)
+    return None
+
+
+def download_pod_latency_file(gcs_url: str, output_dir: str) -> Optional[str]:
+    """
+    Download a podLatencyMeasurement JSON from GCS.
+
+    :param gcs_url: full gs:// URL
+    :param output_dir: local directory to write the file
+    :return: local file path, or None on failure
+    """
+    try:
+        download_file_from_gcs(gcs_url, output_dir)
+        local_path = os.path.join(output_dir, gcs_basename(gcs_url))
+        if os.path.exists(local_path):
+            return local_path
+    except Exception as exc:
+        logger.error("download_pod_latency_file failed: %s", exc)
+    return None
+
+
+def parse_slowest_pod(json_path: str) -> Tuple[Optional[str], Optional[str], int]:
+    """
+    Read a podLatencyMeasurement JSON and return the pod with the highest
+    podReadyLatency.
+
+    :param json_path: local path to the JSON file
+    :return: (pod_name, node_name, latency_ms) — all None/0 on failure
+    """
+    try:
+        with open(json_path, encoding="utf-8") as fh:
+            records = json.load(fh)
+        if not records:
+            return None, None, 0
+        slowest = max(records, key=lambda r: r.get("podReadyLatency", 0))
+        return (
+            slowest.get("podName"),
+            slowest.get("nodeName"),
+            slowest.get("podReadyLatency", 0),
+        )
+    except Exception as exc:
+        logger.error("parse_slowest_pod failed for %s: %s", json_path, exc)
+        return None, None, 0
+
+
+def download_node_journal(
+    gcs_path: str,
+    log_folder: str,
+    node_hostname: str,
+    output_dir: str,
+) -> Optional[str]:
+    """
+    Download the node's systemd journal (gzipped without .gz suffix) and
+    decompress it to a plain-text file.
+
+    GCS path:
+        gs://<gcs_path>/artifacts/<log_folder>/gather-extra/artifacts/nodes/<node>/journal
+
+    :param gcs_path: raw GCS path without gs:// prefix
+    :param log_folder: inner log folder name
+    :param node_hostname: full node hostname (e.g. ip-10-0-67-181.us-west-2...)
+    :param output_dir: local directory for downloaded + decompressed files
+    :return: path to decompressed journal file, or None on failure
+    """
+    journal_url = (
+        f"gs://{gcs_path}/artifacts/{log_folder}/"
+        f"gather-extra/artifacts/nodes/{node_hostname}/journal"
+    )
+    node_dir = os.path.join(output_dir, node_hostname)
+    os.makedirs(node_dir, exist_ok=True)
+
+    try:
+        download_file_from_gcs(journal_url, node_dir)
+    except Exception as exc:
+        logger.error("download_node_journal: gsutil failed for %s: %s", journal_url, exc)
+        return None
+
+    compressed_path = os.path.join(node_dir, "journal")
+    if not os.path.exists(compressed_path):
+        logger.error("download_node_journal: journal not found at %s", compressed_path)
+        return None
+
+    decompressed_path = compressed_path + ".decompressed"
+    try:
+        with gzip.open(compressed_path, "rt", errors="replace") as f_in, \
+                open(decompressed_path, "w", encoding="utf-8") as f_out:
+            f_out.write(f_in.read())
+        return decompressed_path
+    except Exception as exc:
+        logger.error(
+            "download_node_journal: decompression failed for %s: %s",
+            compressed_path, exc,
+        )
+        return None
 
 
 def classify_failure_type(errors_list, categorization_message, is_install_issue):

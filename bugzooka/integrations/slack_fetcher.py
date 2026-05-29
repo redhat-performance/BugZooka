@@ -13,6 +13,7 @@ from bugzooka.analysis.log_analyzer import (
     download_and_analyze_logs,
     filter_errors_with_llm,
     run_agent_analysis,
+    run_node_rca_analysis,
 )
 from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
@@ -554,6 +555,58 @@ class SlackMessageFetcher(SlackClientBase):
                     "retry_count": 0,
                     "lookback_seconds": lookback,
                     "total_failures": _total_failures or 0,
+                })
+            return ts
+
+        # node-rca command: deterministic PLEG/journal RCA for perf jobs
+        if "node-rca" in text_lower:
+            start_time = time.time()
+            _success = False
+            _error_message = None
+            _error_type = None
+            try:
+                view_url, _ = extract_job_details(text)
+                if not view_url:
+                    self.client.chat_postMessage(
+                        channel=self.channel_id,
+                        text="node-rca: no prow URL found in message.",
+                        thread_ts=ts,
+                    )
+                    return ts
+                self.logger.info("node-rca triggered for %s", view_url)
+                rca_report = run_node_rca_analysis(view_url)
+                message_block = self.get_slack_message_blocks(
+                    markdown_header=":mag: *Node Journal RCA*\n",
+                    content_text=rca_report,
+                    use_markdown=True,
+                )
+                self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    text="Node Journal RCA",
+                    blocks=message_block,
+                    thread_ts=ts,
+                )
+                _success = True
+            except Exception as exc:
+                self.logger.error("node-rca failed: %s", exc)
+                self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    text=f"node-rca failed: {exc}",
+                    thread_ts=ts,
+                )
+                _error_message = str(exc)
+                _error_type = type(exc).__name__
+            finally:
+                telemetry.emit({
+                    "command": "node_rca",
+                    "trigger_type": "user_initiated",
+                    "channel_id": self.channel_id,
+                    "user_id": user if user != "Unknown" else None,
+                    "success": _success,
+                    "error_message": _error_message,
+                    "error_type": _error_type,
+                    "duration_ms": int((time.time() - start_time) * 1000),
+                    "retry_count": 0,
                 })
             return ts
 
