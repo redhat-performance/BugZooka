@@ -324,7 +324,7 @@ def _build_summary(
     if pod and pleg_lags:
         app_lags = [lag for lag in pleg_lags if lag.role == "app"]
         if app_lags:
-            worst = max(app_lags, key=lambda l: l.lag_secs)
+            worst = max(app_lags, key=lambda k: k.lag_secs)
             parts.append(
                 f"Pod {pod} on {node}: app container PLEG detection lag = "
                 f"{_fmt(worst.lag_secs)} "
@@ -361,7 +361,7 @@ def _build_summary(
         parts.append(f"Peak pod concurrency: {peak_count} events/s at {peak_ts}.")
 
     # Root cause classification
-    app_lag_max = max((l.lag_secs for l in pleg_lags if l.role == "app"), default=0.0)
+    app_lag_max = max((j.lag_secs for j in pleg_lags if j.role == "app"), default=0.0)
     if app_lag_max > 5:
         if hk_overruns:
             parts.append(

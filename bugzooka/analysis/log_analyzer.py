@@ -1,6 +1,5 @@
 import logging
 import asyncio
-import os
 import tempfile
 from pydantic import BaseModel, Field
 
