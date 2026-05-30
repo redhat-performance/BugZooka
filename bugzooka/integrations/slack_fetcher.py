@@ -642,6 +642,17 @@ class SlackMessageFetcher(SlackClientBase):
         # Auto-trigger node journal RCA when orion reports a podReadyLatency_P99 regression
         all_errors = list(errors_list or []) + list(full_errors_for_file or [])
         if any("podReadyLatency_P99" in (e or "") for e in all_errors):
+            # Extract workload name from the first "[workload]" bracket line in errors,
+            # e.g. "[node-density-cni]" → "node-density-cni", so we search the right
+            # openshift-qe-<workload> artifacts directory instead of a different workload's.
+            import re as _re
+            _workload_hint = ""
+            for _e in all_errors:
+                _m = _re.search(r"^\s*\[([^\]]+)\]", _e or "")
+                if _m:
+                    _workload_hint = _m.group(1).strip()
+                    break
+
             _rca_start = time.time()
             _rca_success = False
             _rca_error_message = None
@@ -649,8 +660,12 @@ class SlackMessageFetcher(SlackClientBase):
             try:
                 rca_url = view_url or extract_job_details(text)[0]
                 if rca_url:
-                    self.logger.info("podReadyLatency_P99 regression detected — running node journal RCA")
-                    rca_report = run_node_rca_analysis(rca_url)
+                    self.logger.info(
+                        "podReadyLatency_P99 regression detected — running node journal RCA "
+                        "(workload hint: %s)",
+                        _workload_hint or "<none>",
+                    )
+                    rca_report = run_node_rca_analysis(rca_url, step_hint=_workload_hint)
                     message_block = self.get_slack_message_blocks(
                         markdown_header=":mag: *Node Journal RCA* (podReadyLatency_P99 regression)\n",
                         content_text=rca_report,

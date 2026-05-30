@@ -388,7 +388,9 @@ def generate_prompt(error_list):
 # ---------------------------------------------------------------------------
 
 
-def find_pod_latency_file(gcs_path: str, log_folder: str) -> Optional[str]:
+def find_pod_latency_file(
+    gcs_path: str, log_folder: str, step_hint: Optional[str] = None
+) -> Optional[str]:
     """
     Locate podLatencyMeasurement-*.json under a prow artifact directory by
     listing GCS at each variable path segment.
@@ -399,6 +401,8 @@ def find_pod_latency_file(gcs_path: str, log_folder: str) -> Optional[str]:
 
     :param gcs_path: raw GCS path without gs:// prefix
     :param log_folder: inner log folder name (from get_prow_inner_artifact_files)
+    :param step_hint: workload name (e.g. "node-density-cni") to prefer the matching
+        openshift-qe-<step_hint> directory; falls back to all openshift-qe-* dirs
     :return: full gs:// URL of the JSON file, or None if not found
     """
     base = f"gs://{gcs_path}/artifacts/{log_folder}/"
@@ -408,12 +412,19 @@ def find_pod_latency_file(gcs_path: str, log_folder: str) -> Optional[str]:
         logger.error("find_pod_latency_file: cannot list %s: %s", base, exc)
         return None
 
-    # Find openshift-qe-* step directories
-    qe_dirs = [e for e in top_entries if e.rstrip("/").endswith("/")
+    # Find openshift-qe-* step directories (GCS lists dirs with trailing /)
+    qe_dirs = [e for e in top_entries if e.endswith("/")
                and "openshift-qe-" in gcs_basename(e.rstrip("/"))]
     if not qe_dirs:
         logger.info("find_pod_latency_file: no openshift-qe-* dirs under %s", base)
         return None
+
+    # When a step_hint is given (e.g. "node-density-cni"), search matching dirs
+    # first so we pick the right workload's metrics, not an alphabetically earlier one.
+    if step_hint:
+        preferred = [d for d in qe_dirs if step_hint in gcs_basename(d.rstrip("/"))]
+        rest = [d for d in qe_dirs if d not in preferred]
+        qe_dirs = preferred + rest
 
     for qe_dir in qe_dirs:
         artifacts_path = qe_dir.rstrip("/") + "/artifacts/"
@@ -424,7 +435,7 @@ def find_pod_latency_file(gcs_path: str, log_folder: str) -> Optional[str]:
 
         metrics_dirs = [
             e for e in artifacts_entries
-            if e.rstrip("/").endswith("/") and "collected-metrics-" in gcs_basename(e.rstrip("/"))
+            if e.endswith("/") and "collected-metrics-" in gcs_basename(e.rstrip("/"))
         ]
         for metrics_dir in metrics_dirs:
             try:

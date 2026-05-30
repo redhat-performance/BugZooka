@@ -237,7 +237,7 @@ def run_agent_analysis(error_summary):
     return result, retry_count
 
 
-def run_node_rca_analysis(job_url: str) -> str:
+def run_node_rca_analysis(job_url: str, step_hint: str = "") -> str:
     """
     Full pipeline: prow URL → slowest pod → node journal → RCA markdown.
 
@@ -250,6 +250,8 @@ def run_node_rca_analysis(job_url: str) -> str:
       6. Run deterministic parser, return formatted markdown
 
     :param job_url: prow view URL (https://prow.ci.../view/gs/...)
+    :param step_hint: workload name (e.g. "node-density-cni") to select the right
+        openshift-qe-* artifacts directory when multiple workloads are present
     :return: markdown RCA report string, or an error message string
     """
     try:
@@ -267,7 +269,7 @@ def run_node_rca_analysis(job_url: str) -> str:
 
     tmp_dir = tempfile.mkdtemp(prefix="bugzooka-node-rca-")
 
-    metrics_url = find_pod_latency_file(gcs_path, log_folder)
+    metrics_url = find_pod_latency_file(gcs_path, log_folder, step_hint=step_hint or None)
     if not metrics_url:
         return (
             "node-rca: podLatencyMeasurement JSON not found under "
