@@ -13,7 +13,7 @@ from bugzooka.analysis.log_analyzer import (
     download_and_analyze_logs,
     filter_errors_with_llm,
     run_agent_analysis,
-    run_node_rca_analysis,
+    run_node_rca_analysis,  # auto-triggered on podReadyLatency_P99 regressions
 )
 from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
@@ -558,58 +558,6 @@ class SlackMessageFetcher(SlackClientBase):
                 })
             return ts
 
-        # node-rca command: deterministic PLEG/journal RCA for perf jobs
-        if "node-rca" in text_lower:
-            start_time = time.time()
-            _success = False
-            _error_message = None
-            _error_type = None
-            try:
-                view_url, _ = extract_job_details(text)
-                if not view_url:
-                    self.client.chat_postMessage(
-                        channel=self.channel_id,
-                        text="node-rca: no prow URL found in message.",
-                        thread_ts=ts,
-                    )
-                    return ts
-                self.logger.info("node-rca triggered for %s", view_url)
-                rca_report = run_node_rca_analysis(view_url)
-                message_block = self.get_slack_message_blocks(
-                    markdown_header=":mag: *Node Journal RCA*\n",
-                    content_text=rca_report,
-                    use_markdown=True,
-                )
-                self.client.chat_postMessage(
-                    channel=self.channel_id,
-                    text="Node Journal RCA",
-                    blocks=message_block,
-                    thread_ts=ts,
-                )
-                _success = True
-            except Exception as exc:
-                self.logger.error("node-rca failed: %s", exc)
-                self.client.chat_postMessage(
-                    channel=self.channel_id,
-                    text=f"node-rca failed: {exc}",
-                    thread_ts=ts,
-                )
-                _error_message = str(exc)
-                _error_type = type(exc).__name__
-            finally:
-                telemetry.emit({
-                    "command": "node_rca",
-                    "trigger_type": "user_initiated",
-                    "channel_id": self.channel_id,
-                    "user_id": user if user != "Unknown" else None,
-                    "success": _success,
-                    "error_message": _error_message,
-                    "error_type": _error_type,
-                    "duration_ms": int((time.time() - start_time) * 1000),
-                    "retry_count": 0,
-                })
-            return ts
-
         # Handle success messages: post orion viz links if available
         if "ended with" in text_lower and "success" in text_lower:
             self._handle_success_viz(msg)
@@ -690,6 +638,47 @@ class SlackMessageFetcher(SlackClientBase):
 
         # Add job-history info in the thread after the full error log
         self._handle_job_history(thread_ts=ts, current_message=msg)
+
+        # Auto-trigger node journal RCA when orion reports a podReadyLatency_P99 regression
+        all_errors = list(errors_list or []) + list(full_errors_for_file or [])
+        if any("podReadyLatency_P99" in (e or "") for e in all_errors):
+            _rca_start = time.time()
+            _rca_success = False
+            _rca_error_message = None
+            _rca_error_type = None
+            try:
+                rca_url = view_url or extract_job_details(text)[0]
+                if rca_url:
+                    self.logger.info("podReadyLatency_P99 regression detected — running node journal RCA")
+                    rca_report = run_node_rca_analysis(rca_url)
+                    message_block = self.get_slack_message_blocks(
+                        markdown_header=":mag: *Node Journal RCA* (podReadyLatency_P99 regression)\n",
+                        content_text=rca_report,
+                        use_markdown=True,
+                    )
+                    self.client.chat_postMessage(
+                        channel=self.channel_id,
+                        text="Node Journal RCA",
+                        blocks=message_block,
+                        thread_ts=ts,
+                    )
+                    _rca_success = True
+            except Exception as exc:
+                self.logger.error("node journal RCA failed: %s", exc)
+                _rca_error_message = str(exc)
+                _rca_error_type = type(exc).__name__
+            finally:
+                telemetry.emit({
+                    "command": "node_rca",
+                    "trigger_type": "automatic",
+                    "channel_id": self.channel_id,
+                    "user_id": user if user != "Unknown" else None,
+                    "success": _rca_success,
+                    "error_message": _rca_error_message,
+                    "error_type": _rca_error_type,
+                    "duration_ms": int((time.time() - _rca_start) * 1000),
+                    "retry_count": 0,
+                })
 
         if is_install_issue or not enable_inference:
             _aa_success = True
