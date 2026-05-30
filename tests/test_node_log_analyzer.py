@@ -8,19 +8,11 @@ contains the known node-density-956 PLEG lag scenario (17s detection lag,
 3 housekeeping overruns, root cause: PLEG relist saturation).
 """
 
-import os
 import textwrap
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bugzooka.analysis.node_log_analyzer import (
-    NodeLogRCAResult,
-    PlegGap,
-    PlegLag,
-    SloStats,
-    TimelineEvent,
     analyze_node_journal,
     format_result_markdown,
 )
@@ -89,7 +81,7 @@ class TestAnalyzeNodeJournal:
 
     def test_pleg_lag_app_container(self, minimal_journal):
         result = analyze_node_journal(minimal_journal, pod_name="node-density-956")
-        app_lags = [l for l in result.pleg_lags if l.role == "app"]
+        app_lags = [lag for lag in result.pleg_lags if lag.role == "app"]
         assert len(app_lags) == 1
         lag = app_lags[0]
         # crio started at 16:02:35.269..., PLEG fired at 16:02:52.403...  → ~17.13s
@@ -98,7 +90,7 @@ class TestAnalyzeNodeJournal:
 
     def test_pleg_lag_pause_container_zero(self, minimal_journal):
         result = analyze_node_journal(minimal_journal, pod_name="node-density-956")
-        pause_lags = [l for l in result.pleg_lags if l.role == "pause"]
+        pause_lags = [lag for lag in result.pleg_lags if lag.role == "pause"]
         assert len(pause_lags) == 1
         # no crio StartContainer for the pause container in this log → lag = 0
         assert pause_lags[0].lag_secs == 0.0
