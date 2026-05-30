@@ -16,7 +16,6 @@ from bugzooka.analysis.node_log_analyzer import (
     analyze_node_journal,
     format_result_markdown,
 )
-from bugzooka.integrations.slack_client_base import SlackClientBase
 
 # ---------------------------------------------------------------------------
 # Fixture: minimal synthetic journal lines for fast unit tests
@@ -161,48 +160,22 @@ class TestFormatResultMarkdown:
         assert "PLEG relist saturation" in md
         assert "KEP-3386" in md
 
-    def test_slack_block_structure(self, minimal_journal):
+    def test_slack_file_content(self, minimal_journal):
         """
-        Verify the exact Slack block structure produced when the RCA report is
-        posted to a thread.  This is what users see in Slack.
+        Verify the markdown content uploaded as node-rca.md to Slack.
 
-        Block layout (use_markdown=True):
-            blocks[0]: section / mrkdwn  ← header ":mag: *Node Journal RCA*"
-            blocks[1]: markdown           ← full format_result_markdown output
+        The RCA is posted as a file attachment (files_upload_v2) rather than
+        a block message, so there is no block structure to assert — only the
+        file content that users open in Slack.
         """
         result = analyze_node_journal(minimal_journal, pod_name="node-density-956")
         report = format_result_markdown(result)
 
-        # Replicate what slack_fetcher._process_message does
-        header = ":mag: *Node Journal RCA* (podReadyLatency_P99 regression)\n"
-
-        # Use a bare SlackClientBase instance (no real Slack connection needed)
-        client = SlackClientBase.__new__(SlackClientBase)
-        blocks = client.get_slack_message_blocks(
-            markdown_header=header,
-            content_text=report,
-            use_markdown=True,
-        )
-
-        assert len(blocks) == 2
-
-        # Header block
-        header_block = blocks[0]
-        assert header_block["type"] == "section"
-        assert header_block["text"]["type"] == "mrkdwn"
-        assert "Node Journal RCA" in header_block["text"]["text"]
-        assert "podReadyLatency_P99" in header_block["text"]["text"]
-
-        # Content block — full markdown report
-        content_block = blocks[1]
-        assert content_block["type"] == "markdown"
-        content = content_block["text"]
-
-        # Key structural assertions — what the user actually reads in Slack
-        assert "## Node RCA —" in content
-        assert "node-density-956" in content
-        assert "### PLEG detection lag" in content
-        assert "17." in content          # ~17s lag visible in table
-        assert "2 overruns" in content   # housekeeping count
-        assert "PLEG relist saturation" in content
-        assert "KEP-3386" in content
+        # Key structural assertions — what the user reads when opening node-rca.md
+        assert "## Node RCA —" in report
+        assert "node-density-956" in report
+        assert "### PLEG detection lag" in report
+        assert "17." in report          # ~17s lag visible in table
+        assert "2 overruns" in report   # housekeeping count
+        assert "PLEG relist saturation" in report
+        assert "KEP-3386" in report

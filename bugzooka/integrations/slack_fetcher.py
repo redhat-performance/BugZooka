@@ -666,15 +666,16 @@ class SlackMessageFetcher(SlackClientBase):
                         _workload_hint or "<none>",
                     )
                     rca_report = run_node_rca_analysis(rca_url, step_hint=_workload_hint)
-                    message_block = self.get_slack_message_blocks(
-                        markdown_header=":mag: *Node Journal RCA* (podReadyLatency_P99 regression)\n",
-                        content_text=rca_report,
-                        use_markdown=True,
-                    )
                     self.client.chat_postMessage(
                         channel=self.channel_id,
-                        text="Node Journal RCA",
-                        blocks=message_block,
+                        text=":mag: *Node Journal RCA* (podReadyLatency_P99 regression)",
+                        thread_ts=ts,
+                    )
+                    self.client.files_upload_v2(
+                        channel=self.channel_id,
+                        content=rca_report,
+                        filename="node-rca.md",
+                        title="Node Journal RCA",
                         thread_ts=ts,
                     )
                     _rca_success = True
