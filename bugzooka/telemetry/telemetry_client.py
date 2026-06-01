@@ -151,10 +151,7 @@ def _bulk_write(events: list) -> None:
         )
         return
 
-    index_name = "{prefix}-{date}".format(
-        prefix=_config["index_prefix"],
-        date=datetime.now(timezone.utc).strftime("%Y.%m"),
-    )
+    index_name = _config["index_prefix"]
 
     actions = [{"_index": index_name, "_source": event} for event in events]
 
@@ -177,7 +174,7 @@ def _ensure_index_template() -> None:
 
     template_name = f"{_config['index_prefix']}-template"
     template_body = {
-        "index_patterns": [f"{_config['index_prefix']}-*"],
+        "index_patterns": [f"{_config['index_prefix']}"],
         "settings": {
             "number_of_shards": 1,
             "number_of_replicas": 1,

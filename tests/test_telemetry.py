@@ -191,7 +191,7 @@ class TestBulkWrite:
         telemetry_client._bulk_write([{"command": "test"}])
 
     def test_bulk_write_generates_correct_index_name(self):
-        """_bulk_write should use monthly index pattern."""
+        """_bulk_write should use the configured index prefix as the index name."""
         mock_client = MagicMock()
         telemetry_client._es_client = mock_client
         telemetry_client._config = {"index_prefix": "bugzooka-telemetry"}
@@ -205,8 +205,7 @@ class TestBulkWrite:
             telemetry_client._bulk_write([{"command": "test"}])
 
             actions = mock_bulk_fn.call_args[0][1]
-            expected_prefix = "bugzooka-telemetry-"
-            assert actions[0]["_index"].startswith(expected_prefix)
+            assert actions[0]["_index"] == "bugzooka-telemetry"
 
 
 def _mock_opensearch_modules():
