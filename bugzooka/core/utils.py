@@ -96,7 +96,7 @@ def download_file_from_gcs(gcs_url, local_path):
     :param local_path: local file system path to download
     :return: None
     """
-    command = f"gsutil -m cp -r {gcs_url} {local_path}"
+    command = f"gsutil cp {gcs_url} {local_path}"
     file_name = gcs_basename(gcs_url)
     try:
         logger.info("Downloading %s...", file_name)
