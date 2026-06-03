@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import tempfile
 from pydantic import BaseModel, Field
 
 from langchain_core.tools import StructuredTool
@@ -15,7 +16,12 @@ from bugzooka.analysis.prompts import ERROR_FILTER_PROMPT, JIRA_TOOL_PROMPT
 from bugzooka.analysis.log_summarizer import (
     download_prow_logs,
     generate_prompt,
+    find_pod_latency_file,
+    download_pod_latency_file,
+    parse_slowest_pod,
+    download_node_journal,
 )
+from bugzooka.analysis.node_log_analyzer import analyze_node_journal, format_result_markdown
 from bugzooka.integrations.inference_client import (
     get_inference_client,
     analyze_with_agentic,
@@ -26,7 +32,8 @@ from bugzooka.integrations import mcp_client as mcp_module
 from bugzooka.integrations.mcp_client import initialize_global_resources_async
 from bugzooka.core.config import get_prompt_config
 from bugzooka.analysis.prow_analyzer import analyze_prow_artifacts, ProwAnalysisResult
-from bugzooka.core.utils import extract_job_details
+from bugzooka.core.utils import extract_job_details, extract_gcs_path
+from bugzooka.analysis.log_summarizer import get_prow_inner_artifact_files
 
 logger = logging.getLogger(__name__)
 
@@ -228,3 +235,71 @@ def run_agent_analysis(error_summary):
     result = _run()
     retry_count = _run.statistics.get("attempt_number", 1) - 1
     return result, retry_count
+
+
+def run_node_rca_analysis(job_url: str, step_hint: str = "") -> str:
+    """
+    Full pipeline: prow URL → slowest pod → node journal → RCA markdown.
+
+    Steps:
+      1. Extract GCS path from prow view URL
+      2. Discover log_folder via get_prow_inner_artifact_files
+      3. Find podLatencyMeasurement JSON in openshift-qe-* step dir
+      4. Download + parse JSON to find slowest pod and its node
+      5. Download + decompress node journal (gzipped, no .gz suffix)
+      6. Run deterministic parser, return formatted markdown
+
+    :param job_url: prow view URL (https://prow.ci.../view/gs/...)
+    :param step_hint: workload name (e.g. "node-density-cni") to select the right
+        openshift-qe-* artifacts directory when multiple workloads are present
+    :return: markdown RCA report string, or an error message string
+    """
+    try:
+        gcs_path = extract_gcs_path(job_url)
+    except Exception as exc:
+        return f"node-rca: could not extract GCS path from URL: {exc}"
+
+    log_folder_path, _ = get_prow_inner_artifact_files(gcs_path)
+    if not log_folder_path:
+        return "node-rca: could not find inner artifact folder (is this a valid prow URL?)."
+
+    # log_folder_path looks like "gs://bucket/.../artifacts/<log_folder>/"
+    # extract just the log_folder name
+    log_folder = log_folder_path.rstrip("/").split("/artifacts/", 1)[-1].rstrip("/")
+
+    tmp_dir = tempfile.mkdtemp(prefix="bugzooka-node-rca-")
+
+    metrics_url = find_pod_latency_file(gcs_path, log_folder, step_hint=step_hint or None)
+    if not metrics_url:
+        return (
+            "node-rca: podLatencyMeasurement JSON not found under "
+            f"artifacts/{log_folder}/openshift-qe-*. "
+            "Is this a node-density or similar perf job?"
+        )
+
+    json_path = download_pod_latency_file(metrics_url, tmp_dir)
+    if not json_path:
+        return f"node-rca: failed to download {metrics_url}."
+
+    pod_name, node_hostname, latency_ms = parse_slowest_pod(json_path)
+    if not pod_name or not node_hostname:
+        return "node-rca: could not determine slowest pod from podLatencyMeasurement JSON."
+
+    logger.info(
+        "node-rca: slowest pod=%s node=%s latency=%dms",
+        pod_name, node_hostname, latency_ms,
+    )
+
+    journal_path = download_node_journal(gcs_path, log_folder, node_hostname, tmp_dir)
+    if not journal_path:
+        return (
+            f"node-rca: could not download journal for node {node_hostname}. "
+            "Check that gather-extra artifacts are present for this run."
+        )
+
+    rca_result = analyze_node_journal(journal_path, pod_name=pod_name)
+    header = (
+        f"**Node RCA for `{pod_name}`** "
+        f"(slowest pod, {latency_ms / 1000:.1f}s podReadyLatency)\n\n"
+    )
+    return header + format_result_markdown(rca_result)
