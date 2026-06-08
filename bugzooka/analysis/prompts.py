@@ -78,9 +78,13 @@ Your task is to analyze pull request performance by comparing PR test results ag
     "user": """Please analyze the performance of this pull request:
 - Organization: {org}
 - Repository: {repo}
-- Pull Request Number: {pr_number}
-- PR URL: {pr_url}
+- Pull Request Number(s): {pr_numbers}
+- PR URL(s): {pr_urls}
 - OpenShift Version: {version}
+
+**Tool Calling Instructions:**
+- If analyzing a SINGLE PR, call `openshift_report_on_pr` with the `pull_request` parameter set to the PR number.
+- If analyzing MULTIPLE PRs, call `openshift_report_on_pr` with the `pull_requests` parameter set to a comma-separated string of PR numbers (e.g. "3169,3170"). The tool returns results for each PR under the `pulls` key.
 
 **Required Output Structure:**
 Output ONLY the sections below with ABSOLUTELY NO additional commentary, thinking process, or meta-commentary.
@@ -91,6 +95,8 @@ Output ONLY the sections below with ABSOLUTELY NO additional commentary, thinkin
 - Significant improvements (≥10%): List with 🚀 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
 - Moderate regressions (5-10%): List with ⚠️ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
 - Moderate improvements (5-10%): List with ✅ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
+- For MULTIPLE PRs: show the above per-PR so the user can compare which PR has more impact.
+- For MULTIPLE PRs in the impact summary: prefix each finding with the PR number (e.g. "PR #3169: apiserverCPU_avg +12.5%").
 - End this section with a line of 80 equals signs.
 
 *ONLY IF SIGNIFICANT REGRESSION IS FOUND, INCLUDE THE FOLLOWING SECTION*
@@ -105,7 +111,10 @@ For each config:
 - Transform config name to readable format: "/orion/examples/trt-external-payload-cluster-density.yaml" → "cluster-density"
 - Table header: e.g. *Config: cluster-density*
 - MANDATORY: Include ONLY top 10 metrics sorted by absolute percentage change (highest impact first)
-- Columns: Metric | Baseline | PR Value | Change (%)
+- For SINGLE PR — Columns: Metric | Baseline | PR Value | Change (%)
+- For MULTIPLE PRs — use a single combined table with all PRs side by side:
+    Columns: Metric | Baseline | PR #X Value | PR #X Change(%) | PR #Y Value | PR #Y Change(%) | ...
+    This lets the user compare PRs at a glance without scrolling between separate tables.
 - Format tables with `code` blocks, adjust column widths to fit data
 - No emojis in tables
 - Separate each config section with 80 equals signs.
