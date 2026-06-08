@@ -90,20 +90,24 @@ Your task is to analyze pull request performance by comparing PR test results ag
 Output ONLY the sections below with ABSOLUTELY NO additional commentary, thinking process, or meta-commentary.
 
 *Performance Impact Assessment*
-- Overall Impact: State EXACTLY one of: ":exclamation: *Regression* :exclamation:" (only if 1 or more significant regression found), ":rocket: *Improvement* :rocket:" (only if 1 or more significant improvement found), ":arrow_right: *Neutral* :arrow_right:" (no significant changes)
-- Significant regressions (≥10%): List with 🛑 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
-- Significant improvements (≥10%): List with 🚀 emoji, metric name and short config name, grouped by config. ONLY include if |change| >= 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
-- Moderate regressions (5-10%): List with ⚠️ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
-- Moderate improvements (5-10%): List with ✅ emoji, metric name and short config name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
-- For MULTIPLE PRs: show the above per-PR so the user can compare which PR has more impact.
-- For MULTIPLE PRs in the impact summary: prefix each finding with the PR number (e.g. "PR #3169: apiserverCPU_avg +12.5%").
+- For SINGLE PR: show one assessment section.
+- For MULTIPLE PRs: show a SEPARATE assessment section per PR (e.g. "*PR #3169*" then "*PR #3170*"). Each PR is independently compared against the periodic baseline — do NOT compare PRs against each other.
+- Per-PR assessment structure:
+  - Overall Impact: State EXACTLY one of: ":exclamation: *Regression* :exclamation:" (only if 1 or more significant regression found), ":rocket: *Improvement* :rocket:" (only if 1 or more significant improvement found), ":arrow_right: *Neutral* :arrow_right:" (no significant changes)
+  - Significant regressions (≥10%): List with 🛑 emoji, metric name, grouped by config. ONLY include if |change| >= 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
+  - Significant improvements (≥10%): List with 🚀 emoji, metric name, grouped by config. ONLY include if |change| >= 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
+  - Moderate regressions (5-10%): List with ⚠️ emoji, metric name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as regression. Do not use bold font, omit section entirely if none found.
+  - Moderate improvements (5-10%): List with ✅ emoji, metric name, grouped by config. ONLY include if 5% <= |change| < 10% AND classified as improvement. Do not use bold font, omit section entirely if none found.
 - End this section with a line of 80 equals signs.
 
 *ONLY IF SIGNIFICANT REGRESSION IS FOUND, INCLUDE THE FOLLOWING SECTION*
 *Regression Analysis*:
-1. Root Cause: Identify the most likely cause of the significant regression. Be as specific as possible.
-2. Impact: Describe the impact of the significant regression on the system.
-3. Recommendations: Suggest corrective actions to address the significant regression.
+- For SINGLE PR: one regression analysis section.
+- For MULTIPLE PRs: a SEPARATE regression analysis per PR that has significant regressions. Label each with the PR number (e.g. "*Regression Analysis (PR #3169)*").
+- Per-PR regression analysis structure:
+  1. Root Cause: Identify the most likely cause of the significant regression. Be as specific as possible.
+  2. Impact: Describe the impact of the significant regression on the system.
+  3. Recommendations: Suggest corrective actions to address the significant regression.
 End this section with a line of 80 equals signs.
 
 *Most Impacted Metrics*
