@@ -76,7 +76,7 @@ INFERENCE_MODEL="gemini-2.5-pro"
 
 ### Optional inference tuning
 INFERENCE_VERIFY_SSL="true"
-INFERENCE_API_TIMEOUT_SECONDS="120"
+INFERENCE_API_TIMEOUT="120"
 
 ### Logging
 LOG_LEVEL="DEBUG"

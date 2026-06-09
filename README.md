@@ -168,7 +168,7 @@ INFERENCE_MODEL="YOUR_INFERENCE_MODEL"       # Model name (e.g., "gemini-2.5-pro
 
 ### Optional Inference Settings
 INFERENCE_VERIFY_SSL="true"                  # Set to "false" for self-signed certificates
-INFERENCE_API_TIMEOUT_SECONDS="120"          # Request timeout in seconds (default: 120)
+INFERENCE_API_TIMEOUT="120"                  # Request timeout in seconds (default: 120)
 INFERENCE_TOP_P="0.9"                        # Nucleus sampling (optional, not all APIs support this)
 INFERENCE_FREQUENCY_PENALTY="0.0"            # Frequency penalty (optional, not all APIs support this)
 
