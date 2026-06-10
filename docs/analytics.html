@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BugZooka Analytics</title>
+  <meta name="description" content="Usage analytics and metrics dashboard for BugZooka - the AI-powered CI/CD failure analysis bot.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/analytics.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="dash-header">
+    <div class="dash-header-inner">
+      <a href="index.html" class="dash-logo">
+        <span class="dash-logo-icon">&#x1F41B;</span>
+        <span>BugZooka</span>
+        <span class="dash-logo-tag">Analytics</span>
+      </a>
+      <div class="dash-controls">
+        <select id="time-range" class="dash-select" title="Time range">
+          <option value="24h">Last 24 hours</option>
+          <option value="7d" selected>Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="90d">Last 90 days</option>
+          <option value="all">All time</option>
+          <option value="custom">Custom range</option>
+        </select>
+        <div class="date-range" id="date-range" hidden>
+          <input type="date" id="date-from" class="dash-input dash-date" title="From">
+          <span class="date-sep">—</span>
+          <input type="date" id="date-to" class="dash-input dash-date" title="To">
+          <button id="date-apply" class="dash-btn dash-btn-primary dash-btn-sm">Go</button>
+        </div>
+        <button id="refresh-btn" class="dash-btn" title="Refresh data">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+        </button>
+        <button id="config-btn" class="dash-btn" title="Configure connection">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Config Modal -->
+  <div class="modal-overlay" id="config-modal" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Configuration</h3>
+        <button class="modal-close" id="config-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <h4>Elasticsearch Connection</h4>
+        <div class="form-group">
+          <label for="es-url">Elasticsearch URL</label>
+          <input type="url" id="es-url" class="dash-input" placeholder="https://your-es-cluster.example.com">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="es-user">Username</label>
+            <input type="text" id="es-user" class="dash-input" placeholder="username">
+          </div>
+          <div class="form-group">
+            <label for="es-pass">Password</label>
+            <input type="password" id="es-pass" class="dash-input" placeholder="password">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="es-index">Index name</label>
+          <input type="text" id="es-index" class="dash-input" placeholder="bugzooka-telemetry" value="bugzooka-telemetry">
+        </div>
+        <div class="form-divider"></div>
+        <h4>Token Cost (per 1K tokens, USD)</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cost-input">Input token cost</label>
+            <input type="number" id="cost-input" class="dash-input" value="0.00025" step="0.0001" min="0">
+          </div>
+          <div class="form-group">
+            <label for="cost-output">Output token cost</label>
+            <input type="number" id="cost-output" class="dash-input" value="0.001" step="0.0001" min="0">
+          </div>
+        </div>
+        <div class="form-divider"></div>
+        <h4>Value Estimation</h4>
+        <p class="form-hint">Adjust these to match your team's context for the "Value Delivered" section.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cfg-min-analysis">Min saved / analysis</label>
+            <input type="number" id="cfg-min-analysis" class="dash-input" value="30" min="1">
+          </div>
+          <div class="form-group">
+            <label for="cfg-min-pr">Min saved / PR review</label>
+            <input type="number" id="cfg-min-pr" class="dash-input" value="45" min="1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="cfg-hourly-cost">Engineer hourly cost ($)</label>
+          <input type="number" id="cfg-hourly-cost" class="dash-input" value="75" min="1">
+        </div>
+        <div class="form-actions">
+          <button id="config-save" class="dash-btn dash-btn-primary">Save &amp; Apply</button>
+          <button id="config-clear" class="dash-btn">Clear Saved</button>
+        </div>
+        <p class="form-hint" style="margin-top: var(--space-md);">All settings are stored in your browser only.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <main class="dash-main">
+
+    <!-- Status Bar -->
+    <div class="dash-status" id="status-bar">
+      <span class="status-dot status-dot-pending"></span>
+      <span id="status-text">Loading analytics data...</span>
+      <span class="status-time" id="status-time"></span>
+    </div>
+
+    <!-- KPI Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Requests</div>
+        <div class="kpi-value" id="kpi-requests">--</div>
+        <div class="kpi-sub" id="kpi-requests-sub">&nbsp;</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Unique Users</div>
+        <div class="kpi-value" id="kpi-users">--</div>
+        <div class="kpi-sub" id="kpi-users-sub">&nbsp;</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Active Teams</div>
+        <div class="kpi-value" id="kpi-teams">--</div>
+        <div class="kpi-sub" id="kpi-teams-sub">&nbsp;</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Success Rate</div>
+        <div class="kpi-value" id="kpi-success">--</div>
+        <div class="kpi-sub" id="kpi-success-sub">&nbsp;</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Median Latency</div>
+        <div class="kpi-value" id="kpi-latency">--</div>
+        <div class="kpi-sub" id="kpi-latency-sub">&nbsp;</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Tokens</div>
+        <div class="kpi-value" id="kpi-tokens">--</div>
+        <div class="kpi-sub" id="kpi-tokens-sub">&nbsp;</div>
+      </div>
+    </section>
+
+    <!-- Value Delivered -->
+    <section class="dash-section">
+      <h2 class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        Value Delivered
+        <span class="section-note">Counts are measured. Hours &amp; savings are estimates &mdash; adjust in settings.</span>
+      </h2>
+      <div class="value-grid">
+        <div class="value-card value-card-accent">
+          <div class="value-icon">&#x1F50D;</div>
+          <div class="value-number" id="val-analyses">--</div>
+          <div class="value-label">Automated Analyses</div>
+          <div class="value-sub" id="val-analyses-sub">&nbsp;</div>
+        </div>
+        <div class="value-card value-card-accent">
+          <div class="value-icon">&#x1F4DD;</div>
+          <div class="value-number" id="val-pr-reviews">--</div>
+          <div class="value-label">PR Reviews</div>
+          <div class="value-sub" id="val-pr-reviews-sub">&nbsp;</div>
+        </div>
+        <div class="value-card value-card-accent">
+          <div class="value-icon">&#x1F4CA;</div>
+          <div class="value-number" id="val-summaries">--</div>
+          <div class="value-label">Summaries Generated</div>
+          <div class="value-sub" id="val-summaries-sub">&nbsp;</div>
+        </div>
+        <div class="value-card value-card-highlight">
+          <div class="value-icon">&#x23F1;</div>
+          <div class="value-number" id="val-hours">--</div>
+          <div class="value-label">Engineer Hours Saved</div>
+          <div class="value-sub" id="val-hours-sub">&nbsp;</div>
+        </div>
+        <div class="value-card value-card-highlight">
+          <div class="value-icon">&#x1F4B0;</div>
+          <div class="value-number" id="val-savings">$--</div>
+          <div class="value-label">Estimated Cost Savings</div>
+          <div class="value-sub" id="val-savings-sub">&nbsp;</div>
+        </div>
+        <div class="value-card value-card-accent">
+          <div class="value-icon">&#x1F4C8;</div>
+          <div class="value-number" id="val-per-day">--</div>
+          <div class="value-label">Avg Requests / Day</div>
+          <div class="value-sub" id="val-per-day-sub">&nbsp;</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Success Breakdown -->
+    <section class="dash-section">
+      <h2 class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>
+        Success &amp; Failure Breakdown
+      </h2>
+      <div class="gauge-row">
+        <div class="gauge-card">
+          <div class="gauge-header">
+            <span class="gauge-title">Overall Success Rate</span>
+            <span class="gauge-pct" id="gauge-pct">--</span>
+          </div>
+          <div class="gauge-track">
+            <div class="gauge-bar" id="gauge-bar"></div>
+          </div>
+          <div class="gauge-legend">
+            <span class="gauge-legend-item"><span class="gauge-dot gauge-dot-ok"></span> Success: <strong id="gauge-ok">--</strong></span>
+            <span class="gauge-legend-item"><span class="gauge-dot gauge-dot-fail"></span> Failure: <strong id="gauge-fail">--</strong></span>
+          </div>
+        </div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Success vs Failure Over Time</h3>
+          <div class="chart-wrap"><canvas id="chart-success-time"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Failures by Team</h3>
+          <div class="chart-wrap"><canvas id="chart-fail-by-team"></canvas></div>
+        </div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Failures by Command</h3>
+          <div class="chart-wrap"><canvas id="chart-fail-by-cmd"></canvas></div>
+        </div>
+        <div class="chart-card callout-card">
+          <h3>Failure Root Cause</h3>
+          <div class="callout">
+            <div class="callout-icon">&#x26A0;&#xFE0F;</div>
+            <div class="callout-body">
+              <strong>Error reasons not captured in telemetry</strong>
+              <p>All current failures come from <code>auto_viz</code> with no <code>error_type</code> or <code>error_message</code> recorded. The telemetry client sets <code>success=false</code> but does not populate the error fields for this command.</p>
+              <p>To surface root causes here, the bot's telemetry emit calls need to include <code>error_type</code> and <code>error_message</code> when marking events as failed.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Breakdown -->
+    <section class="dash-section">
+      <h2 class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Usage by Team
+      </h2>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Requests by Team</h3>
+          <div class="chart-wrap"><canvas id="chart-team-usage"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Team Share</h3>
+          <div class="chart-wrap chart-wrap-sm"><canvas id="chart-team-share"></canvas></div>
+        </div>
+      </div>
+      <div id="team-cards" class="team-cards-grid"></div>
+    </section>
+
+    <!-- Usage -->
+    <section class="dash-section">
+      <h2 class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+        Usage Over Time
+      </h2>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Requests Over Time</h3>
+          <div class="chart-wrap"><canvas id="chart-requests-time"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Trigger Types</h3>
+          <div class="chart-wrap chart-wrap-sm"><canvas id="chart-triggers"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature Adoption -->
+    <section class="dash-section">
+      <h2 class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-6"/></svg>
+        Feature Adoption
+      </h2>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Command Usage</h3>
+          <div class="chart-wrap chart-wrap-sm"><canvas id="chart-commands"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Commands Over Time</h3>
+          <div class="chart-wrap"><canvas id="chart-commands-time"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Performance -->
+    <section class="dash-section">
+      <h2 class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Performance
+      </h2>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Latency Percentiles Over Time</h3>
+          <div class="chart-wrap"><canvas id="chart-latency-time"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Latency by Command</h3>
+          <div class="chart-wrap"><canvas id="chart-latency-cmd"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Token Usage & Cost -->
+    <section class="dash-section">
+      <h2 class="section-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Token Usage &amp; Cost
+      </h2>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Tokens Over Time</h3>
+          <div class="chart-wrap"><canvas id="chart-tokens-time"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Tokens by Command</h3>
+          <div class="chart-wrap"><canvas id="chart-tokens-cmd"></canvas></div>
+        </div>
+      </div>
+      <div class="cost-summary">
+        <div class="cost-card">
+          <div class="cost-label">Estimated Total Cost</div>
+          <div class="cost-value" id="cost-total">$--</div>
+        </div>
+        <div class="cost-card">
+          <div class="cost-label">Cost per Request</div>
+          <div class="cost-value" id="cost-per-request">$--</div>
+        </div>
+        <div class="cost-card">
+          <div class="cost-label">Cost per Day (avg)</div>
+          <div class="cost-value" id="cost-per-day">$--</div>
+        </div>
+        <div class="cost-table-wrap">
+          <table class="cost-table" id="cost-table">
+            <thead>
+              <tr>
+                <th>Command</th>
+                <th>Invocations</th>
+                <th>Total Tokens</th>
+                <th>Avg Tokens</th>
+                <th>Est. Cost</th>
+              </tr>
+            </thead>
+            <tbody id="cost-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="dash-footer">
+    <a href="index.html">&#x1F41B; BugZooka Docs</a>
+    <span>&middot;</span>
+    <a href="https://github.com/mohit-sheth/BugZooka" target="_blank" rel="noopener">GitHub</a>
+    <span>&middot;</span>
+    <span class="dash-footer-muted" id="footer-generated">Data refreshes via GitHub Actions</span>
+  </footer>
+
+  <script src="js/analytics.js"></script>
+</body>
+</html>
