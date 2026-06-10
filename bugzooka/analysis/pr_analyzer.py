@@ -149,7 +149,7 @@ async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
         pr_urls = ", ".join(
             f"https://github.com/{org}/{repo}/pull/{pr}" for pr in pr_numbers
         )
-        pr_numbers_str = ", ".join(pr_numbers)
+        pr_numbers_str = ",".join(pr_numbers)
 
         system_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["system"]
         user_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["user"].format(

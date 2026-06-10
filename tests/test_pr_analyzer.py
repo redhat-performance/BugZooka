@@ -1,8 +1,6 @@
 """
 Tests for PR analysis request parsing and output sanitization.
 """
-import pytest
-
 from bugzooka.analysis.pr_analyzer import _parse_pr_request, _sanitize_gemini_output
 
 

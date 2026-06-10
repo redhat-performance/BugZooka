@@ -75,7 +75,7 @@ Your task is to analyze pull request performance by comparing PR test results ag
 5. **Sort All Metrics**: ALWAYS sort metrics by absolute percentage change (highest to lowest) in all tables and lists.
 6. **Format Output**: Use Slack-friendly formatting as specified in user instructions.
 """,
-    "user": """Please analyze the performance of this pull request:
+    "user": """Please analyze the performance of the following pull request(s):
 - Organization: {org}
 - Repository: {repo}
 - Pull Request Number(s): {pr_numbers}
