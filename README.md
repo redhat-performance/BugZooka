@@ -378,7 +378,7 @@ BugZooka/
 │   │   └── utils.py             # Shared utility functions
 │   ├── integrations/            # External service integrations
 │   │   ├── __init__.py
-│   │   ├── inference_client.py  # Unified inference client (OpenAI-compatible)
+│   │   ├── inference_client.py  # Inference client re-exports (from py-commons)
 │   │   ├── mcp_client.py        # MCP protocol client implementation
 │   │   ├── rag_client_util.py   # RAG vector store utilities
 │   │   ├── slack_client_base.py # Base class for Slack clients

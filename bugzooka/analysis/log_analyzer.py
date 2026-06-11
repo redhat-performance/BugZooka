@@ -2,6 +2,8 @@ import logging
 import asyncio
 from pydantic import BaseModel, Field
 
+import anyio
+
 from langchain_core.tools import StructuredTool
 from tenacity import (
     retry,
@@ -216,7 +218,7 @@ def run_agent_analysis(error_summary):
     @_with_retry
     def _run():
         try:
-            return asyncio.run(_run_async())
+            return anyio.run(_run_async)
         except (InferenceAPIUnavailableError, AgentAnalysisLimitExceededError):
             raise
         except Exception as e:

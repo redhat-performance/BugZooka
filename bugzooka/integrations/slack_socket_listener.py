@@ -3,6 +3,7 @@ Slack Socket Mode integration for real-time event listening.
 This integration uses WebSockets to listen for @ mentions of the bot in real-time.
 Mentions are processed asynchronously using a thread pool for concurrent handling.
 """
+
 import asyncio
 import concurrent.futures
 import logging
@@ -10,6 +11,8 @@ import sys
 import time
 from threading import Lock, Event
 from typing import Dict, Any, Set
+
+import anyio
 
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
@@ -122,14 +125,9 @@ class SlackSocketListener(SlackClientBase):
                 )
 
                 # Analyze PR from text (need to run async function in sync context)
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    analysis_result = loop.run_until_complete(
-                        analyze_pr_with_gemini(text, channel_id=channel)
-                    )
-                finally:
-                    loop.close()
+                analysis_result = anyio.run(
+                    analyze_pr_with_gemini, text, channel
+                )
 
                 # Split the result by "====" separator and send each part as a separate message
                 message_content = analysis_result["message"]
@@ -234,14 +232,9 @@ class SlackSocketListener(SlackClientBase):
                 )
 
                 # Analyze nightly regression (need to run async function in sync context)
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    analysis_result = loop.run_until_complete(
-                        analyze_nightly_regression(text, channel_id=channel)
-                    )
-                finally:
-                    loop.close()
+                analysis_result = anyio.run(
+                    analyze_nightly_regression, text, channel
+                )
 
                 # Send the result
                 message_content = analysis_result["message"]
@@ -326,20 +319,14 @@ class SlackSocketListener(SlackClientBase):
                 _versions_count = len(versions)
 
                 # Run async function in sync context
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    result = loop.run_until_complete(
-                        analyze_performance(
-                            configs,
-                            versions,
-                            lookback_days=lookback_days,
-                            use_all_configs=use_all_configs,
-                            channel_id=channel,
-                        )
-                    )
-                finally:
-                    loop.close()
+                result = anyio.run(
+                    analyze_performance,
+                    configs,
+                    versions,
+                    lookback_days,
+                    use_all_configs,
+                    channel,
+                )
 
                 # Send the result(s) - may be multiple messages to avoid Slack limit
                 if result["success"]:

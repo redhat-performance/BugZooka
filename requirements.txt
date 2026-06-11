@@ -15,8 +15,8 @@ llama-index==0.12.52
 llama-index-embeddings-huggingface==0.5.5
 llama-index-vector-stores-faiss==0.4.0
 
-# py-commons shared utilities (installed separately via: uv pip install -e ../py-commons)
-# py-commons>=0.3.0
+# py-commons
+py-commons>=0.3.0
 
 # LangChain ecosystem (MCP + tools)
 langchain-core>=1.3.0
@@ -42,3 +42,6 @@ logmine==0.4.1
 
 # Telemetry
 opensearch-py>=2.0,<3.0
+
+# Misc.
+cryptography>=44.0.0
