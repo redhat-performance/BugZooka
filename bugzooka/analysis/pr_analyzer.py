@@ -49,37 +49,41 @@ def _sanitize_gemini_output(result: str) -> str:
     return sanitized
 
 
-def _parse_pr_request(text: str) -> Optional[Tuple[str, str, str, str]]:
+def _parse_pr_request(text: str) -> Optional[Tuple[str, str, list, str]]:
     """
     Parse PR analysis request from text.
 
-    Expected format: "analyze pr: {github_url}, compare with {version}"
+    Expected formats:
+        Single PR:  "analyze pr: {github_url}, compare with {version}"
+        Multi PR:   "analyze pr: {url1} {url2}, compare with {version}"
 
-    Both PR URL and version are required.
+    All PRs must be from the same org/repo. Both PR URL(s) and version are required.
 
     :param text: Message text to parse
-    :return: Tuple of (organization, repository, pr_number, version) or None if invalid
+    :return: Tuple of (organization, repository, pr_numbers, version) or None if invalid
     """
-    # Match GitHub PR URLs like https://github.com/org/repo/pull/123
     pr_pattern = r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)"
-    pr_match = re.search(pr_pattern, text)
+    pr_matches = re.findall(pr_pattern, text)
 
-    if not pr_match:
+    if not pr_matches:
         return None
 
-    org, repo, pr_number = pr_match.groups()
+    org, repo, _ = pr_matches[0]
+    for match_org, match_repo, _ in pr_matches[1:]:
+        if match_org != org or match_repo != repo:
+            return None
 
-    # Extract version from "compare with X.XX" pattern - REQUIRED
+    pr_numbers = [m[2] for m in pr_matches]
+
     version_pattern = r"compare\s+with\s+(\d+\.\d+)"
     version_match = re.search(version_pattern, text, re.IGNORECASE)
 
     if not version_match:
-        # Version is required - return None to trigger validation error
         return None
 
     version = version_match.group(1)
 
-    return org, repo, pr_number, version
+    return org, repo, pr_numbers, version
 
 
 async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
@@ -117,9 +121,11 @@ async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
             ),
         )
 
-    org, repo, pr_number, version = parsed
+    org, repo, pr_numbers, version = parsed
+    pr_display = ", ".join(f"#{pr}" for pr in pr_numbers)
     logger.info(
-        f"🔍 PR analysis requested for {org}/{repo}/pull/{pr_number} (OpenShift {version})"
+        "PR analysis requested for %s/%s %s (OpenShift %s)",
+        org, repo, pr_display, version,
     )
 
     # Ensure MCP client is initialized
@@ -132,19 +138,23 @@ async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
 
     try:
         logger.info(
-            "Starting PR performance analysis: %s/%s#%s (OpenShift %s)",
+            "Starting PR performance analysis: %s/%s %s (OpenShift %s)",
             org,
             repo,
-            pr_number,
+            pr_display,
             version,
         )
 
         # Create prompt for PR analysis using centralized prompts
-        pr_url = f"https://github.com/{org}/{repo}/pull/{pr_number}"
+        pr_urls = ", ".join(
+            f"https://github.com/{org}/{repo}/pull/{pr}" for pr in pr_numbers
+        )
+        pr_numbers_str = ",".join(pr_numbers)
 
         system_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["system"]
         user_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["user"].format(
-            org=org, repo=repo, pr_number=pr_number, pr_url=pr_url, version=version
+            org=org, repo=repo, pr_numbers=pr_numbers_str,
+            pr_urls=pr_urls, version=version,
         )
         assistant_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["assistant"]
 
@@ -184,22 +194,22 @@ async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
             # Also check if the result is very short (likely just a "no data" message)
             if len(result.strip()) < 200:
                 logger.info(
-                    "No performance test data found for PR %s/%s#%s",
+                    "No performance test data found for PR %s/%s %s",
                     org,
                     repo,
-                    pr_number,
+                    pr_display,
                 )
                 return make_response(
                     success=True,
                     message=(
-                        f"No performance test results found for PR #{pr_number}\n\n"
+                        f"No performance test results found for PR {pr_display}\n\n"
                         f"This could mean:\n"
                         f"- Performance tests haven't run yet for this PR\n"
                         f"- The PR doesn't trigger performance test jobs\n"
                         f"- Test results are not yet available in the Orion database\n\n"
                         f"Check back later or verify that performance tests are configured for this repository."
                     ),
-                    pr_info=(org, repo, pr_number, version),
+                    pr_info=(org, repo, pr_numbers, version),
                 )
 
         logger.info("PR analysis completed successfully (%d chars)", len(result))
@@ -210,7 +220,7 @@ async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
         return make_response(
             success=True,
             message=sanitized_result,
-            pr_info=(org, repo, pr_number, version),
+            pr_info=(org, repo, pr_numbers, version),
         )
 
     except Exception as e:

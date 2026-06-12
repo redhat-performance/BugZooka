@@ -168,10 +168,12 @@ class SlackSocketListener(SlackClientBase):
                     )
 
                 if analysis_result["success"]:
-                    org, repo, pr_number, version = analysis_result["pr_info"]
+                    org, repo, pr_numbers, version = analysis_result["pr_info"]
                     _pr_repo = f"{org}/{repo}"
+                    pr_display = ", ".join(f"#{pr}" for pr in pr_numbers)
                     self.logger.info(
-                        f"✅ Sent PR analysis for {org}/{repo}#{pr_number} (OpenShift {version}) to {user}"
+                        "Sent PR analysis for %s/%s %s (OpenShift %s) to %s",
+                        org, repo, pr_display, version, user,
                     )
                 else:
                     self.logger.warning(
