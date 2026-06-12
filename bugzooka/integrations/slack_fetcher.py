@@ -466,10 +466,12 @@ class SlackMessageFetcher(SlackClientBase):
 
             view_url, _ = extract_job_details(text)
             if not view_url:
+                success = True
                 return
 
             viz_urls = construct_all_orion_viz_urls(view_url)
             if not viz_urls:
+                success = True
                 return
 
             header_text = ":chart_with_upwards_trend: *Orion Visualization*\n"
