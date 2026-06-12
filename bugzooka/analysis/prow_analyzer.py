@@ -314,12 +314,16 @@ def analyze_prow_artifacts(directory_path, job_name):
         )
     cluster_operators_file_path = os.path.join(directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
-        # check if there are orion results first, as the actual test may have performance issues
+        # check if we have orion results first, as the actual test may have performance issues
         orion_preview, orion_full, cp_tests = scan_orion_jsons(directory_path)
         if len(orion_preview) > 0:
+            if step_phase and step_phase.lower() == "post":
+                post_categorization = "gather-extra runs at the end of the pipeline. Appears to be general workload failure, but we have performance results to look further."
+            else:
+                post_categorization = categorization_message
             return ProwAnalysisResult(
                 errors=[matched_line + "\n"] + orion_preview,
-                categorization_message=categorization_message,
+                categorization_message=post_categorization,
                 requires_llm=False,
                 is_install_issue=False,
                 step_name=step_name,
