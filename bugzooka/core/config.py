@@ -3,9 +3,9 @@ import os
 import logging.config
 from dotenv import load_dotenv
 
+from commons.inference import get_inference_config as get_base_inference_config
 from bugzooka.analysis.prompts import GENERIC_APP_PROMPT
 from bugzooka.core.constants import (
-    INFERENCE_API_TIMEOUT_SECONDS,
     INFERENCE_API_RETRY_ATTEMPTS,
     INFERENCE_API_RETRY_DELAY,
     INFERENCE_API_RETRY_BACKOFF_MULTIPLIER,
@@ -31,71 +31,47 @@ def get_inference_config():
     """
     Get unified inference configuration from environment variables.
 
+    Extends py-commons get_inference_config() with BugZooka-specific retry settings.
+
     Required env vars: INFERENCE_URL, INFERENCE_TOKEN, INFERENCE_MODEL
     Optional env vars:
         - INFERENCE_VERIFY_SSL (default: true)
-        - INFERENCE_API_TIMEOUT_SECONDS (default: 120)
+        - INFERENCE_API_TIMEOUT (default: 120)
         - INFERENCE_TOP_P (optional, not all APIs support this)
         - INFERENCE_FREQUENCY_PENALTY (optional, not all APIs support this)
+        - INFERENCE_API_RETRY_MAX_ATTEMPTS (default: 3)
+        - INFERENCE_API_RETRY_DELAY (default: 5.0)
+        - INFERENCE_API_RETRY_BACKOFF_MULTIPLIER (default: 2.0)
+        - INFERENCE_API_RETRY_MAX_DELAY (default: 60.0)
 
-    :return: dict with url, token, model, verify_ssl, timeout, and retry settings
+    :return: dict with url, token, model, verify_ssl, timeout, top_p, frequency_penalty, and retry settings
     """
-    url = os.getenv("INFERENCE_URL")
-    if not url:
-        raise ValueError("INFERENCE_URL environment variable is required")
+    config = get_base_inference_config()
 
-    token = os.getenv("INFERENCE_TOKEN")
-    if not token:
-        raise ValueError("INFERENCE_TOKEN environment variable is required")
-
-    model = os.getenv("INFERENCE_MODEL")
-    if not model:
-        raise ValueError("INFERENCE_MODEL environment variable is required")
-
-    verify_ssl_env = os.getenv("INFERENCE_VERIFY_SSL", "true").lower()
-    verify_ssl = verify_ssl_env == "true"
-    timeout = float(
-        os.getenv("INFERENCE_API_TIMEOUT_SECONDS", str(INFERENCE_API_TIMEOUT_SECONDS))
-    )
-
-    # Optional parameters (not all APIs support these, e.g. Gemini doesn't support frequency_penalty)
-    top_p_env = os.getenv("INFERENCE_TOP_P")
-    top_p = float(top_p_env) if top_p_env else None
-
-    frequency_penalty_env = os.getenv("INFERENCE_FREQUENCY_PENALTY")
-    frequency_penalty = float(frequency_penalty_env) if frequency_penalty_env else None
-
-    return {
-        "url": url,
-        "token": token,
-        "model": model,
-        "verify_ssl": verify_ssl,
-        "timeout": timeout,
-        "top_p": top_p,
-        "frequency_penalty": frequency_penalty,
-        "retry": {
-            "max_attempts": int(
-                os.getenv(
-                    "INFERENCE_API_RETRY_MAX_ATTEMPTS",
-                    str(INFERENCE_API_RETRY_ATTEMPTS),
-                )
-            ),
-            "delay": float(
-                os.getenv("INFERENCE_API_RETRY_DELAY", str(INFERENCE_API_RETRY_DELAY))
-            ),
-            "backoff": float(
-                os.getenv(
-                    "INFERENCE_API_RETRY_BACKOFF_MULTIPLIER",
-                    str(INFERENCE_API_RETRY_BACKOFF_MULTIPLIER),
-                )
-            ),
-            "max_delay": float(
-                os.getenv(
-                    "INFERENCE_API_RETRY_MAX_DELAY", str(INFERENCE_API_MAX_RETRY_DELAY)
-                )
-            ),
-        },
+    config["retry"] = {
+        "max_attempts": int(
+            os.getenv(
+                "INFERENCE_API_RETRY_MAX_ATTEMPTS",
+                str(INFERENCE_API_RETRY_ATTEMPTS),
+            )
+        ),
+        "delay": float(
+            os.getenv("INFERENCE_API_RETRY_DELAY", str(INFERENCE_API_RETRY_DELAY))
+        ),
+        "backoff": float(
+            os.getenv(
+                "INFERENCE_API_RETRY_BACKOFF_MULTIPLIER",
+                str(INFERENCE_API_RETRY_BACKOFF_MULTIPLIER),
+            )
+        ),
+        "max_delay": float(
+            os.getenv(
+                "INFERENCE_API_RETRY_MAX_DELAY", str(INFERENCE_API_MAX_RETRY_DELAY)
+            )
+        ),
     }
+
+    return config
 
 
 def get_prompt_config():

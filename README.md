@@ -168,7 +168,7 @@ INFERENCE_MODEL="YOUR_INFERENCE_MODEL"       # Model name (e.g., "gemini-2.5-pro
 
 ### Optional Inference Settings
 INFERENCE_VERIFY_SSL="true"                  # Set to "false" for self-signed certificates
-INFERENCE_API_TIMEOUT_SECONDS="120"          # Request timeout in seconds (default: 120)
+INFERENCE_API_TIMEOUT="120"                  # Request timeout in seconds (default: 120)
 INFERENCE_TOP_P="0.9"                        # Nucleus sampling (optional, not all APIs support this)
 INFERENCE_FREQUENCY_PENALTY="0.0"            # Frequency penalty (optional, not all APIs support this)
 
@@ -378,7 +378,7 @@ BugZooka/
 │   │   └── utils.py             # Shared utility functions
 │   ├── integrations/            # External service integrations
 │   │   ├── __init__.py
-│   │   ├── inference_client.py  # Unified inference client (OpenAI-compatible)
+│   │   ├── inference_client.py  # Inference client re-exports (from py-commons)
 │   │   ├── mcp_client.py        # MCP protocol client implementation
 │   │   ├── rag_client_util.py   # RAG vector store utilities
 │   │   ├── slack_client_base.py # Base class for Slack clients
