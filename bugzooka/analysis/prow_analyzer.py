@@ -314,16 +314,27 @@ def analyze_prow_artifacts(directory_path, job_name):
         )
     cluster_operators_file_path = os.path.join(directory_path, "clusteroperators.json")
     if not os.path.isfile(cluster_operators_file_path):
-        with open(build_file_path, "r", errors="replace", encoding="utf-8") as f:
-            build_log_content = list(deque(f, maxlen=BUILD_LOG_TAIL))
+        # check if we have orion results first, as the actual test may have performance issues
+        orion_preview, orion_full, cp_tests = scan_orion_jsons(directory_path)
+        if len(orion_preview) > 0:
+            if step_phase and step_phase.lower() == "post":
+                post_categorization = "gather-extra runs at the end of the pipeline. Appears to be general workload failure, but we have performance results to look further."
+            else:
+                post_categorization = categorization_message
+            return ProwAnalysisResult(
+                errors=[matched_line + "\n"] + orion_preview,
+                categorization_message=post_categorization,
+                requires_llm=False,
+                is_install_issue=False,
+                step_name=step_name,
+                full_errors_for_file=[matched_line + "\n"] + orion_full,
+                changepoint_tests=cp_tests,
+            )
+        # No orion results, so fall back to build log analysis (which triggers LLM analysis)
         return ProwAnalysisResult(
-            errors=[
-                "\n Somehow couldn't find clusteroperators.json file",
-                matched_line + "\n",
-                (step_summary or "") + "\n".join(build_log_content),
-            ],
+            errors=[matched_line] + [step_summary or ""] + search_prow_errors(directory_path, job_name),
             categorization_message=categorization_message,
-            requires_llm=False,
+            requires_llm=True,
             is_install_issue=False,
             step_name=step_name,
             full_errors_for_file=None,
