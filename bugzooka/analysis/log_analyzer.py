@@ -2,6 +2,8 @@ import logging
 import asyncio
 from pydantic import BaseModel, Field
 
+import anyio
+
 from langchain_core.tools import StructuredTool
 from tenacity import (
     retry,
@@ -24,7 +26,7 @@ from bugzooka.integrations.inference_client import (
 )
 from bugzooka.integrations import mcp_client as mcp_module
 from bugzooka.integrations.mcp_client import initialize_global_resources_async
-from bugzooka.core.config import get_prompt_config
+from bugzooka.core.config import get_prompt_config, get_inference_config
 from bugzooka.analysis.prow_analyzer import analyze_prow_artifacts, ProwAnalysisResult
 from bugzooka.core.utils import extract_job_details
 
@@ -32,8 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 def _with_retry(func):
-    """Decorator that adds retry logic using the inference client's retry config."""
-    config = get_inference_client().retry_config
+    """Decorator that adds retry logic using the inference config's retry settings."""
+    config = get_inference_config()["retry"]
     return retry(
         stop=stop_after_attempt(config["max_attempts"]),
         wait=wait_exponential(
@@ -216,7 +218,7 @@ def run_agent_analysis(error_summary):
     @_with_retry
     def _run():
         try:
-            return asyncio.run(_run_async())
+            return anyio.run(_run_async)
         except (InferenceAPIUnavailableError, AgentAnalysisLimitExceededError):
             raise
         except Exception as e:
