@@ -4,9 +4,9 @@ This integration uses WebSockets to listen for @ mentions of the bot in real-tim
 Mentions are processed asynchronously using a thread pool for concurrent handling.
 """
 
-import asyncio
 import concurrent.futures
 import logging
+import re
 import sys
 import time
 from threading import Lock, Event
@@ -28,6 +28,8 @@ from bugzooka.analysis.perf_summary_analyzer import (
     analyze_performance,
     parse_perf_summary_args,
 )
+from bugzooka.analysis.general_query_analyzer import analyze_general_query
+from bugzooka.core.conversation import ConversationManager
 from bugzooka.integrations.slack_client_base import SlackClientBase
 from bugzooka import telemetry
 
@@ -70,30 +72,50 @@ class SlackSocketListener(SlackClientBase):
         self.processing_lock = Lock()
         self.processing_messages: Set[str] = set()
 
+        # Conversation history for multi-turn interactions
+        self.conversation_manager = ConversationManager()
+
     def _should_process_message(self, event: Dict[str, Any]) -> bool:
         """
         Determine if a message should be processed.
-        Only process app_mention events not sent by the bot itself.
+        Accepts app_mention events and thread reply messages to known conversations.
 
         :param event: Slack event data
         :return: True if message should be processed
         """
-        # Only process app_mention events
-        if event.get("type") != "app_mention":
-            return False
+        event_type = event.get("type")
 
         # Don't process messages from the bot itself
         if event.get("user") == JEDI_BOT_SLACK_USER_ID:
             self.logger.debug("Ignoring message from bot itself")
             return False
 
-        return True
+        # Always process direct @mentions
+        if event_type == "app_mention":
+            return True
+
+        # Process thread replies to conversations we're already tracking
+        if event_type == "message":
+            thread_ts = event.get("thread_ts")
+            channel = event.get("channel")
+            if thread_ts and channel:
+                msgs = self.conversation_manager.get_messages(channel, thread_ts)
+                if msgs:
+                    self.logger.debug("Processing thread reply to active conversation")
+                    return True
+
+        return False
+
+    @staticmethod
+    def _clean_mention_text(text: str) -> str:
+        """Remove bot @mention tags from message text."""
+        return re.sub(r"<@\w+>\s*", "", text).strip()
 
     def _process_mention(self, event: Dict[str, Any]) -> None:
         """
         Process an @ mention of the bot (core processing logic).
-        Checks for "analyze pr: {PR link}" pattern and calls Orion MCP if found.
-        Otherwise sends greeting message.
+        Routes to specialized handlers for structured commands,
+        or falls back to the general agentic query handler.
 
         :param event: Slack event data
         """
@@ -125,9 +147,7 @@ class SlackSocketListener(SlackClientBase):
                 )
 
                 # Analyze PR from text (need to run async function in sync context)
-                analysis_result = anyio.run(
-                    analyze_pr_with_gemini, text, channel
-                )
+                analysis_result = anyio.run(analyze_pr_with_gemini, text, channel)
 
                 # Split the result by "====" separator and send each part as a separate message
                 message_content = analysis_result["message"]
@@ -171,7 +191,11 @@ class SlackSocketListener(SlackClientBase):
                     pr_display = ", ".join(f"#{pr}" for pr in pr_numbers)
                     self.logger.info(
                         "Sent PR analysis for %s/%s %s (OpenShift %s) to %s",
-                        org, repo, pr_display, version, user,
+                        org,
+                        repo,
+                        pr_display,
+                        version,
+                        user,
                     )
                 else:
                     self.logger.warning(
@@ -202,20 +226,22 @@ class SlackSocketListener(SlackClientBase):
                 _error_message = str(e)
                 _error_type = type(e).__name__
             finally:
-                telemetry.emit({
-                    "command": "analyze_pr",
-                    "trigger_type": "user_initiated",
-                    "channel_id": channel,
-                    "user_id": user,
-                    "success": _success,
-                    "error_message": _error_message,
-                    "error_type": _error_type,
-                    "duration_ms": int((time.time() - _start) * 1000),
-                    "retry_count": 0,
-                    "pr_repo": _pr_repo,
-                    "total_tokens": _total_tokens,
-                    "tool_calls_count": _tool_calls_count,
-                })
+                telemetry.emit(
+                    {
+                        "command": "analyze_pr",
+                        "trigger_type": "user_initiated",
+                        "channel_id": channel,
+                        "user_id": user,
+                        "success": _success,
+                        "error_message": _error_message,
+                        "error_type": _error_type,
+                        "duration_ms": int((time.time() - _start) * 1000),
+                        "retry_count": 0,
+                        "pr_repo": _pr_repo,
+                        "total_tokens": _total_tokens,
+                        "tool_calls_count": _tool_calls_count,
+                    }
+                )
             return
 
         # Check if message contains "inspect" for nightly regression analysis
@@ -234,9 +260,7 @@ class SlackSocketListener(SlackClientBase):
                 )
 
                 # Analyze nightly regression (need to run async function in sync context)
-                analysis_result = anyio.run(
-                    analyze_nightly_regression, text, channel
-                )
+                analysis_result = anyio.run(analyze_nightly_regression, text, channel)
 
                 # Send the result
                 message_content = analysis_result["message"]
@@ -280,18 +304,20 @@ class SlackSocketListener(SlackClientBase):
                 _error_message = str(e)
                 _error_type = "mcp_error"
             finally:
-                telemetry.emit({
-                    "command": "inspect_nightly",
-                    "trigger_type": "user_initiated",
-                    "channel_id": channel,
-                    "user_id": user,
-                    "success": _success,
-                    "error_message": _error_message,
-                    "error_type": _error_type,
-                    "duration_ms": int((time.time() - _start) * 1000),
-                    "retry_count": 0,
-                    "nightly_version": _nightly_version,
-                })
+                telemetry.emit(
+                    {
+                        "command": "inspect_nightly",
+                        "trigger_type": "user_initiated",
+                        "channel_id": channel,
+                        "user_id": user,
+                        "success": _success,
+                        "error_message": _error_message,
+                        "error_type": _error_type,
+                        "duration_ms": int((time.time() - _start) * 1000),
+                        "retry_count": 0,
+                        "nightly_version": _nightly_version,
+                    }
+                )
             return
 
         # Check if message contains "performance summary"
@@ -365,8 +391,98 @@ class SlackSocketListener(SlackClientBase):
                 _error_message = str(e)
                 _error_type = "mcp_error"
             finally:
-                telemetry.emit({
-                    "command": "perf_summary",
+                telemetry.emit(
+                    {
+                        "command": "perf_summary",
+                        "trigger_type": "user_initiated",
+                        "channel_id": channel,
+                        "user_id": user,
+                        "success": _success,
+                        "error_message": _error_message,
+                        "error_type": _error_type,
+                        "duration_ms": int((time.time() - _start) * 1000),
+                        "retry_count": 0,
+                        "configs_count": _configs_count,
+                        "versions_count": _versions_count,
+                    }
+                )
+            return
+
+        # Default: General agentic query handler for free-form questions
+        thread_ts = event.get("thread_ts", ts)
+        clean_text = self._clean_mention_text(text)
+        _start = time.time()
+        _success = False
+        _error_message = None
+        _error_type = None
+        _total_tokens = 0
+        _tool_calls_count = 0
+        try:
+            self.client.chat_postMessage(
+                channel=channel,
+                text=":hourglass_flowing_sand: Thinking...",
+                thread_ts=thread_ts,
+            )
+
+            self.conversation_manager.append_user_message(
+                channel, thread_ts, clean_text
+            )
+            conversation_messages = self.conversation_manager.get_messages(
+                channel, thread_ts
+            )
+
+            analysis_result = anyio.run(
+                analyze_general_query, clean_text, conversation_messages, channel
+            )
+
+            result_text = analysis_result.get("message", "")
+
+            if analysis_result.get("success"):
+                self.conversation_manager.append_assistant_message(
+                    channel, thread_ts, result_text
+                )
+                chunks = self.chunk_text(result_text)
+                for chunk in chunks:
+                    self.client.chat_postMessage(
+                        channel=channel,
+                        text=chunk,
+                        thread_ts=thread_ts,
+                    )
+                self.logger.info(
+                    f"Sent general query response to {user} ({len(chunks)} chunk(s))"
+                )
+                _success = True
+            else:
+                self.client.chat_postMessage(
+                    channel=channel,
+                    text=result_text,
+                    thread_ts=thread_ts,
+                )
+                self.logger.warning(f"General query failed: {result_text}")
+
+            try:
+                from bugzooka.integrations.inference_client import get_inference_client
+
+                client = get_inference_client()
+                _total_tokens = client.last_total_tokens
+                _tool_calls_count = client.last_tool_calls_count
+            except Exception:
+                pass
+
+        except Exception as e:
+            self.logger.error(f"Error processing general query: {e}", exc_info=True)
+            self.client.chat_postMessage(
+                channel=channel,
+                text=f"An error occurred: {str(e)}",
+                thread_ts=thread_ts,
+            )
+            _error_message = str(e)
+            _error_type = type(e).__name__
+        finally:
+            is_followup = event.get("thread_ts") is not None
+            telemetry.emit(
+                {
+                    "command": "general_query",
                     "trigger_type": "user_initiated",
                     "channel_id": channel,
                     "user_id": user,
@@ -375,44 +491,11 @@ class SlackSocketListener(SlackClientBase):
                     "error_type": _error_type,
                     "duration_ms": int((time.time() - _start) * 1000),
                     "retry_count": 0,
-                    "configs_count": _configs_count,
-                    "versions_count": _versions_count,
-                })
-            return
-
-        # Default: Send simple greeting message
-        _start = time.time()
-        _success = False
-        _error_message = None
-        _error_type = None
-        try:
-            self.client.chat_postMessage(
-                channel=channel,
-                text="May the force be with you! :performance_jedi:\n\n"
-                ":bulb: *Tips:*\n"
-                "- `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` - PR performance analysis\n"
-                "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis\n"
-                "- `performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...]` - Performance metrics summary",
-                thread_ts=ts,
+                    "total_tokens": _total_tokens,
+                    "tool_calls_count": _tool_calls_count,
+                    "is_followup": is_followup,
+                }
             )
-            self.logger.info(f"✅ Sent greeting to {user}")
-            _success = True
-        except Exception as e:
-            self.logger.error(f"Error sending message: {e}", exc_info=True)
-            _error_message = str(e)
-            _error_type = "slack_api_error"
-        finally:
-            telemetry.emit({
-                "command": "help",
-                "trigger_type": "user_initiated",
-                "channel_id": channel,
-                "user_id": user,
-                "success": _success,
-                "error_message": _error_message,
-                "error_type": _error_type,
-                "duration_ms": int((time.time() - _start) * 1000),
-                "retry_count": 0,
-            })
 
     def _submit_mention_for_processing(self, event: Dict[str, Any]) -> None:
         """
@@ -470,10 +553,19 @@ class SlackSocketListener(SlackClientBase):
 
             self.logger.debug(f"Received event type: {event_type}")
 
-            if event_type == "app_mention":
-                # Add eyes emoji reaction immediately for instant visual feedback
+            # Handle @mentions and thread replies to active conversations
+            is_thread_reply = (
+                event_type == "message"
+                and event.get("thread_ts")
+                and event.get("user") != JEDI_BOT_SLACK_USER_ID
+                and not event.get("bot_id")
+            )
+
+            if event_type == "app_mention" or is_thread_reply:
                 ts = event.get("ts")
                 channel = event.get("channel")
+
+                # Add eyes emoji reaction for instant visual feedback
                 try:
                     self.client.reactions_add(
                         name="eyes",
