@@ -292,13 +292,15 @@ def analyze_prow_artifacts(directory_path, job_name):
             step_summary = ""
     if matched_line is None:
         if step_name and step_phase:
+            # Determine if it's an install issue based on the phase
+            # Post-phase runs after the main workload, so failures there aren't install issues
+            is_install_issue = step_phase.lower() not in ["post", "test"]
+
             return ProwAnalysisResult(
                 errors=[step_summary] if step_summary else [],
-                categorization_message=(
-                    f"Maintenance Issue: {step_name} failed in" f" {step_phase} phase"
-                ),
+                categorization_message=categorization_message,  # Use already-set categorization
                 requires_llm=False,
-                is_install_issue=True,
+                is_install_issue=is_install_issue,
                 step_name=step_name,
                 full_errors_for_file=None,
             )

@@ -3,6 +3,7 @@ FAILURE_KEYWORDS = {
     "install": ("Install", "installation failure"),
     "provision": ("Provision", "provision failure"),
     "deprovision": ("Deprovision", "deprovision failure"),
+    "gather-extra": ("Gather Extra", "gather-extra failure"),
     "gather": ("Must Gather", "must gather failure"),
     "orion": ("Changepoint", "orion changepoint detection failure"),
     "cerberus": ("Prow Other", "cerberus health check failure"),
