@@ -267,8 +267,8 @@ class SlackMessageFetcher(SlackClientBase):
         if is_post_phase and is_gather_extra:
             # gather-extra runs after the main workload, so provide context
             retrigger_message = (
-                "gather-extra runs at the end of the pipeline. "
-                "Appears to be general workload failure, but we have performance results to look further."
+                "gather-extra runs at the end of the pipeline after the main workload. "
+                "The main workload may have completed successfully and performance results are still available for analysis."
             )
             message_block = self.get_slack_message_blocks(
                 markdown_header=":information_source: *Post-Phase Context*\n",
