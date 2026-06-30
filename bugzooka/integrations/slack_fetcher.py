@@ -260,7 +260,27 @@ class SlackMessageFetcher(SlackClientBase):
         # in the thread (just before job history).
         pending_file = errors_for_file.strip() if needs_file else None
 
-        if is_install_issue:
+        # Check for post-phase and gather-extra failures
+        is_post_phase = categorization_message and "post phase" in categorization_message.lower()
+        is_gather_extra = categorization_message and "gather-extra" in categorization_message.lower()
+
+        if is_post_phase and is_gather_extra:
+            # gather-extra runs after the main workload, so provide context
+            retrigger_message = (
+                "gather-extra runs at the end of the pipeline. "
+                "Appears to be general workload failure, but we have performance results to look further."
+            )
+            message_block = self.get_slack_message_blocks(
+                markdown_header=":information_source: *Post-Phase Context*\n",
+                content_text=retrigger_message,
+            )
+            self.client.chat_postMessage(
+                channel=self.channel_id,
+                text="Post-Phase Context",
+                blocks=message_block,
+                thread_ts=max_ts,
+            )
+        elif is_install_issue:
             retrigger_message = (
                 "This appears to be an installation or maintenance issue. "
                 "Please re-trigger the run."
