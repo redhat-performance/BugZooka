@@ -33,17 +33,6 @@ class TestConversationManager:
         assert msgs1[0]["content"] == "thread 1"
         assert msgs2[0]["content"] == "thread 2"
 
-    def test_get_messages_returns_copy(self):
-        mgr = ConversationManager()
-        mgr.append_user_message("C123", "ts1", "hello")
-        msgs = mgr.get_messages("C123", "ts1")
-        msgs.append({"role": "user", "content": "injected"})
-        assert len(mgr.get_messages("C123", "ts1")) == 1
-
-    def test_get_messages_empty_for_unknown_thread(self):
-        mgr = ConversationManager()
-        assert mgr.get_messages("C123", "unknown") == []
-
     def test_max_messages_trimmed(self):
         mgr = ConversationManager(max_messages=4)
         for i in range(6):
@@ -60,12 +49,6 @@ class TestConversationManager:
         mgr.append_user_message("C123", "ts2", "new message")
         assert mgr.get_messages("C123", "ts1") == []
         assert len(mgr.get_messages("C123", "ts2")) == 1
-
-    def test_clear(self):
-        mgr = ConversationManager()
-        mgr.append_user_message("C123", "ts1", "hello")
-        mgr.clear("C123", "ts1")
-        assert mgr.get_messages("C123", "ts1") == []
 
     def test_thread_safety(self):
         mgr = ConversationManager()

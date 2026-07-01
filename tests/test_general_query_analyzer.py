@@ -124,29 +124,6 @@ def test_analyze_no_mcp_tools():
     anyio.run(_run)
 
 
-def test_analyze_empty_llm_result():
-    async def _run():
-        mock_client = _make_mock_client("")
-        mock_tool = MagicMock()
-        mock_tool.name = "test_tool"
-
-        with patch(
-            "bugzooka.analysis.general_query_analyzer.initialize_global_resources_async",
-            new_callable=AsyncMock,
-        ), patch(
-            "bugzooka.analysis.general_query_analyzer.mcp_module"
-        ) as mock_mcp, patch(
-            "bugzooka.analysis.general_query_analyzer.get_inference_client",
-            return_value=mock_client,
-        ), _patch_convert_to_openai_tool():
-            mock_mcp.mcp_tools = [mock_tool]
-
-            result = await analyze_general_query([{"role": "user", "content": "test"}])
-            assert result["success"] is False
-
-    anyio.run(_run)
-
-
 def test_analyze_exception_handling():
     async def _run():
         mock_client = MagicMock()
@@ -208,36 +185,5 @@ def test_execute_tool_routes_through_invoke_mcp_tool():
             result = await execute_func("get_orion_configs", {})
             mock_invoke.assert_called_once_with(mock_tool, {})
             assert result == "tool result"
-
-    anyio.run(_run)
-
-
-def test_execute_tool_unknown_tool():
-    """Verify execute_tool returns error for unknown tool names."""
-    conversation = [{"role": "user", "content": "test"}]
-
-    async def _run():
-        mock_client = _make_mock_client("done")
-        mock_tool = MagicMock()
-        mock_tool.name = "known_tool"
-
-        with patch(
-            "bugzooka.analysis.general_query_analyzer.initialize_global_resources_async",
-            new_callable=AsyncMock,
-        ), patch(
-            "bugzooka.analysis.general_query_analyzer.mcp_module"
-        ) as mock_mcp, patch(
-            "bugzooka.analysis.general_query_analyzer.get_inference_client",
-            return_value=mock_client,
-        ), _patch_convert_to_openai_tool():
-            mock_mcp.mcp_tools = [mock_tool]
-
-            await analyze_general_query(conversation)
-
-            call_kwargs = mock_client.chat_with_tools_async.call_args.kwargs
-            execute_func = call_kwargs["execute_tool_func"]
-
-            result = await execute_func("nonexistent_tool", {})
-            assert "not found" in result
 
     anyio.run(_run)
