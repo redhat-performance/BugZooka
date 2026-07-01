@@ -43,9 +43,9 @@ class TestConversationManager:
         assert msgs[-1]["content"] == "msg 5"
 
     def test_ttl_expiry(self):
-        mgr = ConversationManager(ttl_seconds=0)
+        mgr = ConversationManager(ttl_seconds=1)
         mgr.append_user_message("C123", "ts1", "old message")
-        time.sleep(0.01)
+        time.sleep(1.1)
         mgr.append_user_message("C123", "ts2", "new message")
         assert mgr.get_messages("C123", "ts1") == []
         assert len(mgr.get_messages("C123", "ts2")) == 1

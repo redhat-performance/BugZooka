@@ -213,7 +213,7 @@ class SlackSocketListener(SlackClientBase):
             extra["total_tokens"] = client.last_total_tokens
             extra["tool_calls_count"] = client.last_tool_calls_count
         except Exception:
-            pass
+            self.logger.debug("Unable to read inference telemetry", exc_info=True)
         return extra
 
     def _handle_nightly_inspection(
@@ -351,7 +351,7 @@ class SlackSocketListener(SlackClientBase):
                 extra["total_tokens"] = client.last_total_tokens
                 extra["tool_calls_count"] = client.last_tool_calls_count
             except Exception:
-                pass
+                self.logger.debug("Unable to read inference telemetry", exc_info=True)
             return extra
 
         try:
@@ -472,15 +472,7 @@ class SlackSocketListener(SlackClientBase):
 
             self.logger.debug(f"Received event type: {event_type}")
 
-            # Handle @mentions and thread replies to active conversations
-            is_thread_reply = (
-                event_type == "message"
-                and event.get("thread_ts")
-                and event.get("user") != JEDI_BOT_SLACK_USER_ID
-                and not event.get("bot_id")
-            )
-
-            if event_type == "app_mention" or is_thread_reply:
+            if not event.get("bot_id") and self._should_process_message(event):
                 ts = event.get("ts")
                 channel = event.get("channel")
 

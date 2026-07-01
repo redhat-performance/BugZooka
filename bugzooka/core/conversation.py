@@ -76,6 +76,7 @@ class ConversationManager:
 
     def get_messages(self, channel_id: str, thread_ts: str) -> list[dict]:
         with self._lock:
+            self._evict_expired()
             key = self._key(channel_id, thread_ts)
             state = self._conversations.get(key)
             if state is None:

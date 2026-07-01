@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _queue: queue.Queue = queue.Queue(maxsize=1000)
 _thread: Optional[threading.Thread] = None
 _es_client = None
-_config: dict = {}
+_config: Optional[dict] = None
 _channel_team_mappings: dict = {}
 _shutdown_event = threading.Event()
 _started = False
@@ -112,6 +112,7 @@ def shutdown() -> None:
 
 def _flush_thread() -> None:
     """Daemon thread: drain queue and bulk-write to ES periodically."""
+    assert _config is not None
     flush_interval = _config["flush_interval"]
     batch_size = _config["batch_size"]
 
@@ -148,6 +149,7 @@ def _bulk_write(events: list) -> None:
         )
         return
 
+    assert _config is not None
     index_name = _config["index_prefix"]
 
     actions = [{"_index": index_name, "_source": event} for event in events]
@@ -171,6 +173,7 @@ def _ensure_index_template() -> None:
     if _es_client is None:
         return
 
+    assert _config is not None
     template_name = f"{_config['index_prefix']}-template"
     template_body = {
         "index_patterns": [f"{_config['index_prefix']}"],

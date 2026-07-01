@@ -141,8 +141,10 @@ async def invoke_mcp_tool(tool: Any, args: dict) -> str:
                 elif block.get("type") == "image":
                     has_images = True
                     if collector:
-                        b64 = block.get("base64", "")
-                        mime = block.get("mime_type", "image/png")
+                        b64 = block.get("base64") or block.get("data", "")
+                        mime = block.get("mime_type") or block.get(
+                            "mimeType", "image/png"
+                        )
                         collector.add_image(b64, mime, tool_name)
 
             if text_parts:
