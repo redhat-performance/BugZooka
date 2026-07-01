@@ -1,15 +1,20 @@
 """General-purpose agentic query handler for free-form natural language questions.
 
-Uses the same agentic LLM loop as pr_analyzer.py, but with a flexible prompt
-that lets the LLM autonomously select which MCP tools to call based on the
-user's natural language query. Supports multi-turn conversation via message history.
+Unlike pr_analyzer.py which uses analyze_with_agentic from commons, this module
+drives chat_with_tools_async directly so tool calls route through invoke_mcp_tool.
+This lets the ImageCollector intercept image content blocks from MCP tools.
 """
 
 import logging
 
-from bugzooka.integrations.mcp_client import initialize_global_resources_async
+from langchain_core.utils.function_calling import convert_to_openai_tool
+
+from bugzooka.integrations.mcp_client import (
+    initialize_global_resources_async,
+    invoke_mcp_tool,
+)
 from bugzooka.core.utils import make_response
-from bugzooka.integrations.inference_client import analyze_with_agentic
+from bugzooka.integrations.inference_client import get_inference_client
 from bugzooka.analysis.prompts import GENERAL_QUERY_PROMPT
 import bugzooka.integrations.mcp_client as mcp_module
 
@@ -17,17 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 async def analyze_general_query(
-    text: str,
     conversation_messages: list[dict],
     channel_id: str | None = None,
 ) -> dict:
     """
     Handle a free-form natural language query using the agentic LLM loop.
 
-    The LLM receives the full conversation history and all available MCP tools,
-    then autonomously decides which tools to call to answer the user's question.
-
-    :param text: The current user message (already included in conversation_messages)
     :param conversation_messages: Full conversation history in OpenAI message format
     :param channel_id: Slack channel ID for ES_SERVER routing (optional)
     :return: Dictionary with 'success' (bool) and 'message' (str)
@@ -52,9 +52,20 @@ async def analyze_general_query(
     messages.extend(conversation_messages)
 
     try:
-        result = await analyze_with_agentic(
+        client = get_inference_client()
+        tools_by_name = {tool.name: tool for tool in mcp_module.mcp_tools}
+        openai_tools = [convert_to_openai_tool(t) for t in mcp_module.mcp_tools]
+
+        async def execute_tool(tool_name, tool_args):
+            tool = tools_by_name.get(tool_name)
+            if not tool:
+                return f"Error: Tool '{tool_name}' not found"
+            return await invoke_mcp_tool(tool, tool_args)
+
+        result = await client.chat_with_tools_async(
             messages=messages,
-            tools=mcp_module.mcp_tools,
+            tools=openai_tools,
+            execute_tool_func=execute_tool,
         )
 
         if not result:

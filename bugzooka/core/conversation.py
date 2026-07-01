@@ -4,7 +4,6 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List
 
 CONVERSATION_TTL_SECONDS = int(os.getenv("CONVERSATION_TTL_SECONDS", "7200"))
 MAX_MESSAGES_PER_THREAD = int(os.getenv("MAX_MESSAGES_PER_THREAD", "20"))
@@ -14,7 +13,7 @@ MAX_MESSAGES_PER_THREAD = int(os.getenv("MAX_MESSAGES_PER_THREAD", "20"))
 class ConversationState:
     channel_id: str
     thread_ts: str
-    messages: List[dict] = field(default_factory=list)
+    messages: list[dict] = field(default_factory=list)
     last_activity: float = field(default_factory=time.time)
 
 
@@ -26,7 +25,7 @@ class ConversationManager:
         ttl_seconds: int = CONVERSATION_TTL_SECONDS,
         max_messages: int = MAX_MESSAGES_PER_THREAD,
     ):
-        self._conversations: Dict[str, ConversationState] = {}
+        self._conversations: dict[str, ConversationState] = {}
         self._lock = threading.Lock()
         self._ttl = ttl_seconds
         self._max_messages = max_messages
@@ -75,7 +74,7 @@ class ConversationManager:
             state.messages.append({"role": "assistant", "content": text})
             self._trim(state)
 
-    def get_messages(self, channel_id: str, thread_ts: str) -> List[dict]:
+    def get_messages(self, channel_id: str, thread_ts: str) -> list[dict]:
         with self._lock:
             key = self._key(channel_id, thread_ts)
             state = self._conversations.get(key)

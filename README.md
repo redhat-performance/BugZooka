@@ -144,6 +144,19 @@ BugZooka can generate a configurable performance summary across metrics for one 
 * `@PerfScale Jedi inspect 4.22.0-0.nightly-2026-01-05-203335 vs 4.22.0-0.nightly-2026-01-01-123456` - Calls `has_nightly_regressed` tool in [orion-mcp](https://github.com/cloud-bulldozer/orion-mcp) and campares two given nightlies.
 * `@PerfScale Jedi inspect 4.22.0-0.nightly-2026-01-05-203335 for config trt-external-payload-node-density.yaml` - Calls `has_nightly_regressed` tool in [orion-mcp](https://github.com/cloud-bulldozer/orion-mcp) for a given nightly checks regression only for a given orion configuration file instead of the [default](https://github.com/cloud-bulldozer/orion-mcp/blob/main/orion_mcp.py#L470).
 
+#### **Free-Form Queries (Agentic)**
+The bot handles any natural-language question by passing it to the LLM with all MCP tools available. The LLM autonomously picks which Orion tools to call.
+
+```
+@PerfScale Jedi how is cudn-density doing on 5.0?
+@PerfScale Jedi show me podReadyLatency_P99 for node-density-cni on 4.22
+```
+
+Responses include numeric summaries and chart images uploaded directly to the Slack thread.
+
+#### **Multi-Turn Conversations**
+Thread replies to an existing bot conversation are automatically processed without requiring another @mention. Conversation history is kept in-memory per thread with a configurable TTL (default: 2 hours, `CONVERSATION_TTL_SECONDS`).
+
 **Note**: All the triggers that start with a bot mention (.i.e. `@PerfScale Jedi`) run in socket mode. All socket mode features can be used in any slack channel without needing to host your own on premise openshift deployment.
 
 ## **Configurables**
@@ -375,9 +388,11 @@ BugZooka/
 │   │   ├── __init__.py
 │   │   ├── config.py            # Configuration management
 │   │   ├── constants.py         # Application constants
+│   │   ├── conversation.py      # Per-thread conversation history manager
 │   │   └── utils.py             # Shared utility functions
 │   ├── integrations/            # External service integrations
 │   │   ├── __init__.py
+│   │   ├── image_collector.py   # Collects images from MCP tool results for Slack upload
 │   │   ├── inference_client.py  # Inference client re-exports (from py-commons)
 │   │   ├── mcp_client.py        # MCP protocol client implementation
 │   │   ├── rag_client_util.py   # RAG vector store utilities
@@ -389,6 +404,7 @@ BugZooka/
 │       ├── failure_keywords.py  # Failure pattern detection
 │       ├── log_analyzer.py      # Main log analysis orchestration
 │       ├── log_summarizer.py    # Log summarization functionality
+│       ├── general_query_analyzer.py  # Agentic handler for free-form queries
 │       ├── pr_analyzer.py       # PR performance analysis with Gemini+MCP
 │       ├── prompts.py           # AI prompts and templates
 │       ├── prow_analyzer.py     # Prow-specific CI/CD analysis
@@ -414,6 +430,8 @@ BugZooka/
 │   ├── __init__.py
 │   ├── conftest.py              # Pytest configuration
 │   ├── helpers.py               # Test utilities
+│   ├── test_conversation.py     # Conversation manager tests
+│   ├── test_general_query_analyzer.py  # General query analyzer tests
 │   ├── test_slack_fetcher.py    # Slack fetcher tests
 │   └── test_slack_socket_listener.py  # Socket mode tests
 ├── Dockerfile                   # Container image definition
