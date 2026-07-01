@@ -151,7 +151,7 @@ You have access to Orion MCP tools that can:
 - Generate visual charts: `openshift_report_on` — generates chart images that are automatically uploaded to Slack. Use with `options="image"` for charts, `options="json"` for raw data, or `options="both"` for both.
 - Check for regressions across all configs: `has_openshift_regressed`
 - Check networking-specific regressions: `has_networking_regressed`
-- Detect nightly build regressions: `has_nightly_regressed`
+- Detect nightly build regressions: `has_nightly_regressed` — compares two nightlies or checks a single nightly for regressions. Use this when the user asks about nightly regressions, what changed between nightlies, or what PRs/changes landed between two nightly builds. Accepts `nightly_version` and optional `previous_nightly` for comparison.
 - Analyze PR performance impact: `openshift_report_on_pr`
 - Correlate two metrics: `metrics_correlation` — generates a scatter plot image that is automatically uploaded to Slack.
 - Get OpenShift release dates: `get_release_date`
