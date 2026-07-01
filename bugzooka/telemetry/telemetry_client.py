@@ -8,7 +8,6 @@ Events are queued and bulk-written on a configurable interval or batch size.
 import logging
 import queue
 import threading
-import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 _queue: queue.Queue = queue.Queue(maxsize=1000)
 _thread: Optional[threading.Thread] = None
 _es_client = None
-_config: Optional[dict] = None
+_config: dict = {}
 _channel_team_mappings: dict = {}
 _shutdown_event = threading.Event()
 _started = False
@@ -90,9 +89,7 @@ def emit(event: dict) -> None:
             _queue.qsize(),
         )
     except queue.Full:
-        logger.warning(
-            "Telemetry queue full, dropping event: %s", event.get("command")
-        )
+        logger.warning("Telemetry queue full, dropping event: %s", event.get("command"))
     except Exception as e:
         logger.warning("Telemetry emit error: %s", e)
 
@@ -131,7 +128,7 @@ def _flush_thread() -> None:
 
 def _drain_and_flush(batch_size: int) -> None:
     """Drain up to batch_size events from queue and write to ES."""
-    batch = []
+    batch: list[dict] = []
     while len(batch) < batch_size:
         try:
             event = _queue.get_nowait()
@@ -164,7 +161,9 @@ def _bulk_write(events: list) -> None:
         else:
             logger.debug("Telemetry flushed %d events to %s", success, index_name)
     except Exception as e:
-        logger.error("Telemetry bulk write failed: %s. Dropping %d events.", e, len(events))
+        logger.error(
+            "Telemetry bulk write failed: %s. Dropping %d events.", e, len(events)
+        )
 
 
 def _ensure_index_template() -> None:

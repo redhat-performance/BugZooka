@@ -14,7 +14,6 @@ from contextvars import ContextVar
 from typing import Callable, Awaitable
 
 from langchain_mcp_adapters.interceptors import (
-    ToolCallInterceptor,
     MCPToolCallRequest,
     MCPToolCallResult,
 )
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Context variable to track current Slack channel
 # This is set by analyzers before calling MCP tools and read by interceptor
-current_channel: ContextVar[str] = ContextVar('current_channel', default=None)
+current_channel: ContextVar[str | None] = ContextVar("current_channel", default=None)
 
 
 class HeaderEncryptionInterceptor:

@@ -86,7 +86,7 @@ def _parse_pr_request(text: str) -> Optional[Tuple[str, str, list, str]]:
     return org, repo, pr_numbers, version
 
 
-async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
+async def analyze_pr_with_gemini(text: str, channel_id: str | None = None) -> dict:
     """
     Parse PR analysis request and analyze PR performance using Gemini with MCP.
 
@@ -102,6 +102,7 @@ async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
     # Set channel context for ES encryption interceptor
     if channel_id:
         from bugzooka.integrations.mcp_interceptors import current_channel
+
         current_channel.set(channel_id)
         logger.debug("Set channel context for PR analysis: %s", channel_id)
 
@@ -125,7 +126,10 @@ async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
     pr_display = ", ".join(f"#{pr}" for pr in pr_numbers)
     logger.info(
         "PR analysis requested for %s/%s %s (OpenShift %s)",
-        org, repo, pr_display, version,
+        org,
+        repo,
+        pr_display,
+        version,
     )
 
     # Ensure MCP client is initialized
@@ -153,8 +157,11 @@ async def analyze_pr_with_gemini(text: str, channel_id: str = None) -> dict:
 
         system_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["system"]
         user_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["user"].format(
-            org=org, repo=repo, pr_numbers=pr_numbers_str,
-            pr_urls=pr_urls, version=version,
+            org=org,
+            repo=repo,
+            pr_numbers=pr_numbers_str,
+            pr_urls=pr_urls,
+            version=version,
         )
         assistant_prompt = PR_PERFORMANCE_ANALYSIS_PROMPT["assistant"]
 

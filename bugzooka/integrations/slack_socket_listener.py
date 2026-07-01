@@ -31,6 +31,11 @@ from bugzooka.analysis.perf_summary_analyzer import (
 from bugzooka.analysis.general_query_analyzer import analyze_general_query
 from bugzooka.core.conversation import ConversationManager
 from bugzooka.integrations.slack_client_base import SlackClientBase
+from bugzooka.integrations.image_collector import (
+    ImageCollector,
+    set_collector,
+    reset_collector,
+)
 from bugzooka import telemetry
 
 
@@ -122,10 +127,10 @@ class SlackSocketListener(SlackClientBase):
         if not self._should_process_message(event):
             return
 
-        user = event.get("user", "Unknown")
-        ts = event.get("ts")
-        channel = event.get("channel")
-        text = event.get("text", "")
+        user: str = event.get("user", "Unknown")
+        ts: str = event.get("ts", "")
+        channel: str = event.get("channel", "")
+        text: str = event.get("text", "")
 
         self.logger.info(f"📩 Processing mention from {user} at ts {ts}")
 
@@ -417,6 +422,10 @@ class SlackSocketListener(SlackClientBase):
         _error_type = None
         _total_tokens = 0
         _tool_calls_count = 0
+        collector = ImageCollector()
+        # Must set collector inside the worker thread — ThreadPoolExecutor
+        # does not propagate the calling thread's contextvars.
+        token = set_collector(collector)
         try:
             self.client.chat_postMessage(
                 channel=channel,
@@ -432,7 +441,7 @@ class SlackSocketListener(SlackClientBase):
             )
 
             analysis_result = anyio.run(
-                analyze_general_query, clean_text, conversation_messages, channel
+                analyze_general_query, conversation_messages, channel
             )
 
             result_text = analysis_result.get("message", "")
@@ -448,6 +457,20 @@ class SlackSocketListener(SlackClientBase):
                         text=chunk,
                         thread_ts=thread_ts,
                     )
+
+                if collector.has_images():
+                    for img in collector.get_images():
+                        try:
+                            self.client.files_upload_v2(
+                                channel=channel,
+                                content=collector.decode_image(img),
+                                filename=img["filename"],
+                                title=f"Chart from {img['tool_name']}",
+                                thread_ts=thread_ts,
+                            )
+                        except Exception as upload_err:
+                            self.logger.error("Failed to upload image: %s", upload_err)
+
                 self.logger.info(
                     f"Sent general query response to {user} ({len(chunks)} chunk(s))"
                 )
@@ -479,6 +502,8 @@ class SlackSocketListener(SlackClientBase):
             _error_message = str(e)
             _error_type = type(e).__name__
         finally:
+            collector.clear()
+            reset_collector(token)
             is_followup = event.get("thread_ts") is not None
             telemetry.emit(
                 {

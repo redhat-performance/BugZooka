@@ -669,7 +669,7 @@ async def analyze_performance(
     versions: Optional[List[str]] = None,
     lookback_days: Optional[int] = None,
     use_all_configs: bool = False,
-    channel_id: str = None,
+    channel_id: str | None = None,
 ) -> dict:
     """
     Analyze performance metrics for the specified config and version.
@@ -687,6 +687,7 @@ async def analyze_performance(
     # Set channel context for ES encryption interceptor
     if channel_id:
         from bugzooka.integrations.mcp_interceptors import current_channel
+
         current_channel.set(channel_id)
         logger.debug("Set channel context for performance summary: %s", channel_id)
 
