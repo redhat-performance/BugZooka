@@ -240,9 +240,7 @@ class SlackMessageFetcher(SlackClientBase):
             header_text += f"<{viz_url}|View Changepoint Visualization>\n"
         header_text += "\nError Logs Preview"
 
-        needs_file = errors_for_file != errors_preview and (
-            is_changepoint or len(errors_for_file) > preview_limit
-        )
+        needs_file = errors_for_file != errors_preview or len(errors_for_file) > preview_limit
 
         # Always post the preview message first
         message_block = self.get_slack_message_blocks(
@@ -301,9 +299,12 @@ class SlackMessageFetcher(SlackClientBase):
     def _upload_full_error_log(self, content, max_ts):
         """Upload full error log file to the thread."""
         self.logger.info("Uploading full error log file")
+        clean_content = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', content)
+        clean_content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', clean_content)
+        clean_content = re.sub(r'[^\u0000-\uffff]', '', clean_content)
         self.client.files_upload_v2(
             channel=self.channel_id,
-            content=content,
+            content=clean_content,
             filename="full_errors.txt",
             title="Full Error Log",
             thread_ts=max_ts,
