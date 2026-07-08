@@ -22,6 +22,31 @@ MOCK_ANALYSIS_RESULT = (
     None,
 )
 
+MOCK_ANALYSIS_RESULT_POD_LATENCY = (
+    [
+        "\n[node-density]",
+        "  podReadyLatency_P99: +45.23%",
+        "  Changepoint at: 5.0.0-0.nightly-2026-05-27-134409",
+    ],
+    "test phase: openshift-qe-node-density orion regression",
+    False,
+    False,
+    "openshift-qe-node-density",
+    None,
+)
+
+MOCK_NODE_RCA_REPORT = """\
+## Node RCA — ip-10-0-67-181.us-west-2.compute.internal
+
+**Anchor pod:** `node-density-956`
+**UID:** `cdcd7672-d87d-434e-86ea-0e2035dcacb8`
+
+### Summary
+
+Pod node-density-956: app container PLEG detection lag = 17.134s. \
+Root cause: continuous PLEG relist saturation. Fix: Evented PLEG (KEP-3386).\
+"""
+
 
 def run_slack_fetcher_test(
     test_messages,

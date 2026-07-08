@@ -13,6 +13,7 @@ from bugzooka.analysis.log_analyzer import (
     download_and_analyze_logs,
     filter_errors_with_llm,
     run_agent_analysis,
+    run_node_rca_analysis,  # auto-triggered on podReadyLatency_P99 regressions
 )
 from bugzooka.analysis.log_summarizer import (
     classify_failure_type,
@@ -660,6 +661,63 @@ class SlackMessageFetcher(SlackClientBase):
 
         # Add job-history info in the thread after the full error log
         self._handle_job_history(thread_ts=ts, current_message=msg)
+
+        # Auto-trigger node journal RCA when orion reports a podReadyLatency_P99 regression
+        all_errors = list(errors_list or []) + list(full_errors_for_file or [])
+        if any("podReadyLatency_P99" in (e or "") for e in all_errors):
+            # Extract workload name from the first "[workload]" bracket line in errors,
+            # e.g. "[node-density-cni]" → "node-density-cni", so we search the right
+            # openshift-qe-<workload> artifacts directory instead of a different workload's.
+            import re as _re
+            _workload_hint = ""
+            for _e in all_errors:
+                _m = _re.search(r"^\s*\[([^\]]+)\]", _e or "")
+                if _m:
+                    _workload_hint = _m.group(1).strip()
+                    break
+
+            _rca_start = time.time()
+            _rca_success = False
+            _rca_error_message = None
+            _rca_error_type = None
+            try:
+                rca_url = view_url or extract_job_details(text)[0]
+                if rca_url:
+                    self.logger.info(
+                        "podReadyLatency_P99 regression detected — running node journal RCA "
+                        "(workload hint: %s)",
+                        _workload_hint or "<none>",
+                    )
+                    rca_report = run_node_rca_analysis(rca_url, step_hint=_workload_hint)
+                    self.client.chat_postMessage(
+                        channel=self.channel_id,
+                        text=":mag: *Node Journal RCA* (podReadyLatency_P99 regression)",
+                        thread_ts=ts,
+                    )
+                    self.client.files_upload_v2(
+                        channel=self.channel_id,
+                        content=rca_report,
+                        filename="node-rca.md",
+                        title="Node Journal RCA",
+                        thread_ts=ts,
+                    )
+                    _rca_success = True
+            except Exception as exc:
+                self.logger.error("node journal RCA failed: %s", exc)
+                _rca_error_message = str(exc)
+                _rca_error_type = type(exc).__name__
+            finally:
+                telemetry.emit({
+                    "command": "node_rca",
+                    "trigger_type": "automatic",
+                    "channel_id": self.channel_id,
+                    "user_id": user if user != "Unknown" else None,
+                    "success": _rca_success,
+                    "error_message": _rca_error_message,
+                    "error_type": _rca_error_type,
+                    "duration_ms": int((time.time() - _rca_start) * 1000),
+                    "retry_count": 0,
+                })
 
         if is_install_issue or not enable_inference:
             _aa_success = True
