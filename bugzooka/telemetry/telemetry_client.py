@@ -8,7 +8,6 @@ Events are queued and bulk-written on a configurable interval or batch size.
 import logging
 import queue
 import threading
-import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -90,9 +89,7 @@ def emit(event: dict) -> None:
             _queue.qsize(),
         )
     except queue.Full:
-        logger.warning(
-            "Telemetry queue full, dropping event: %s", event.get("command")
-        )
+        logger.warning("Telemetry queue full, dropping event: %s", event.get("command"))
     except Exception as e:
         logger.warning("Telemetry emit error: %s", e)
 
@@ -115,6 +112,7 @@ def shutdown() -> None:
 
 def _flush_thread() -> None:
     """Daemon thread: drain queue and bulk-write to ES periodically."""
+    assert _config is not None
     flush_interval = _config["flush_interval"]
     batch_size = _config["batch_size"]
 
@@ -131,7 +129,7 @@ def _flush_thread() -> None:
 
 def _drain_and_flush(batch_size: int) -> None:
     """Drain up to batch_size events from queue and write to ES."""
-    batch = []
+    batch: list[dict] = []
     while len(batch) < batch_size:
         try:
             event = _queue.get_nowait()
@@ -151,6 +149,7 @@ def _bulk_write(events: list) -> None:
         )
         return
 
+    assert _config is not None
     index_name = _config["index_prefix"]
 
     actions = [{"_index": index_name, "_source": event} for event in events]
@@ -164,7 +163,9 @@ def _bulk_write(events: list) -> None:
         else:
             logger.debug("Telemetry flushed %d events to %s", success, index_name)
     except Exception as e:
-        logger.error("Telemetry bulk write failed: %s. Dropping %d events.", e, len(events))
+        logger.error(
+            "Telemetry bulk write failed: %s. Dropping %d events.", e, len(events)
+        )
 
 
 def _ensure_index_template() -> None:
@@ -172,6 +173,7 @@ def _ensure_index_template() -> None:
     if _es_client is None:
         return
 
+    assert _config is not None
     template_name = f"{_config['index_prefix']}-template"
     template_body = {
         "index_patterns": [f"{_config['index_prefix']}"],

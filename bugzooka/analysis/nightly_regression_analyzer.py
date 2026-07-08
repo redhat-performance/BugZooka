@@ -89,7 +89,7 @@ def _parse_nightly_inspect_request(text: str) -> Optional[NightlyInspectRequest]
     )
 
 
-async def analyze_nightly_regression(text: str, channel_id: str = None) -> dict:
+async def analyze_nightly_regression(text: str, channel_id: str | None = None) -> dict:
     """
     Parse nightly inspection request and call has_nightly_regressed MCP tool directly.
 
@@ -108,8 +108,11 @@ async def analyze_nightly_regression(text: str, channel_id: str = None) -> dict:
     # Set channel context for ES encryption interceptor
     if channel_id:
         from bugzooka.integrations.mcp_interceptors import current_channel
+
         current_channel.set(channel_id)
-        logger.debug("Set channel context for nightly regression analysis: %s", channel_id)
+        logger.debug(
+            "Set channel context for nightly regression analysis: %s", channel_id
+        )
     # Parse nightly inspect request from text
     parsed = _parse_nightly_inspect_request(text)
 

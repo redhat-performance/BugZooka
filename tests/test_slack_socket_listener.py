@@ -138,37 +138,34 @@ class TestSlackSocketListener:
 
                     assert listener._should_process_message(event) is False
 
-    def test_process_mention_sends_greeting(
+    def test_process_mention_general_query(
         self, mock_socket_mode_client, mock_web_client
     ):
-        """Test processing app_mention sends greeting message."""
+        """Test processing a free-form question routes to general query handler."""
         logger = logging.getLogger("test")
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(logger=logger)
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_general_query"
+                ) as mock_analyze:
+                    mock_analyze.return_value = {
+                        "success": True,
+                        "message": "Performance looks stable.",
+                    }
 
-                event = create_app_mention_event(
-                    text="<@UBOTID> hello",
-                    user="U12345",
-                    ts="1234567890.123456",
-                )
+                    listener = SlackSocketListener(logger=logger)
 
-                # Call the core processing logic directly
-                listener._process_mention(event)
+                    event = create_app_mention_event(
+                        text="<@UBOTID> how is cudn doing on 5.0?",
+                        user="U12345",
+                        ts="1234567890.123456",
+                    )
 
-                # Verify greeting message was sent (reaction happens earlier in the flow)
-                mock_web_client.return_value.chat_postMessage.assert_called_once_with(
-                    channel=CHANNEL_ID,
-                    text=(
-                        "May the force be with you! :performance_jedi:\n\n"
-                        ":bulb: *Tips:*\n"
-                        "- `analyze pr: <GitHub PR URL>, compare with <OpenShift Version>` - PR performance analysis\n"
-                        "- `inspect <nightly> [vs <previous_nightly>] [for config <config>] [for <N> days]` - Nightly regression analysis\n"
-                        "- `performance summary <Nd> [ALL|config1.yaml,config2.yaml] [version ...]` - Performance metrics summary"
-                    ),
-                    thread_ts="1234567890.123456",
-                )
+                    listener._process_mention(event)
+
+                    mock_analyze.assert_called_once()
+                    assert mock_web_client.return_value.chat_postMessage.call_count >= 2
 
     def test_submit_mention_for_processing(
         self, mock_socket_mode_client, mock_web_client
@@ -178,22 +175,26 @@ class TestSlackSocketListener:
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(logger=logger, max_workers=2)
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_general_query"
+                ) as mock_analyze:
+                    mock_analyze.return_value = {
+                        "success": True,
+                        "message": "Done",
+                    }
 
-                event = create_app_mention_event(
-                    text="<@UBOTID> async test",
-                    user="U12345",
-                    ts="1234567890.123456",
-                )
+                    listener = SlackSocketListener(logger=logger, max_workers=2)
 
-                # Call submission wrapper
-                listener._submit_mention_for_processing(event)
+                    event = create_app_mention_event(
+                        text="<@UBOTID> async test",
+                        user="U12345",
+                        ts="1234567890.123456",
+                    )
 
-                # Wait for thread to complete
-                listener.executor.shutdown(wait=True)
+                    listener._submit_mention_for_processing(event)
+                    listener.executor.shutdown(wait=True)
 
-                # Verify it was processed
-                mock_web_client.return_value.chat_postMessage.assert_called_once()
+                    assert mock_web_client.return_value.chat_postMessage.call_count >= 1
 
     def test_submit_mention_prevents_duplicates(
         self, mock_socket_mode_client, mock_web_client
@@ -307,27 +308,29 @@ class TestSlackSocketListener:
     def test_process_mention_error_handling(
         self, mock_socket_mode_client, mock_web_client
     ):
-        """Test that errors during mention processing are properly logged."""
+        """Test that errors during mention processing are handled gracefully."""
         logger = logging.getLogger("test")
 
         with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
             with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
-                listener = SlackSocketListener(logger=logger)
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_general_query"
+                ) as mock_analyze:
+                    mock_analyze.side_effect = RuntimeError("Analysis failed")
 
-                # Mock chat_postMessage to raise an exception
-                mock_web_client.return_value.chat_postMessage.side_effect = Exception(
-                    "Test error"
-                )
+                    listener = SlackSocketListener(logger=logger)
 
-                event = create_app_mention_event(
-                    text="<@UBOTID> test", ts="1234567890.123456"
-                )
+                    event = create_app_mention_event(
+                        text="<@UBOTID> test", ts="1234567890.123456"
+                    )
 
-                # Should not raise exception
-                listener._process_mention(event)
+                    # Should not raise exception
+                    listener._process_mention(event)
 
-                # Verify chat_postMessage was attempted
-                mock_web_client.return_value.chat_postMessage.assert_called_once()
+                    # Verify error message was posted
+                    calls = mock_web_client.return_value.chat_postMessage.call_args_list
+                    error_texts = [c.kwargs.get("text", "") for c in calls]
+                    assert any("error" in t.lower() for t in error_texts)
 
     def test_process_mention_triggers_nightly_analysis(
         self, mock_socket_mode_client, mock_web_client
@@ -464,12 +467,108 @@ class TestSlackSocketListener:
                         ts="1234567890.123456",
                     )
 
-                    # Should not raise exception
                     listener._process_mention(event)
 
-                    # Verify error message was sent
                     calls = mock_web_client.return_value.chat_postMessage.call_args_list
-                    error_call = calls[-1]
-                    assert "Unexpected error" in error_call.kwargs.get(
-                        "text", error_call[1].get("text", "")
+                    error_texts = [c.kwargs.get("text", "") for c in calls]
+                    assert any("error" in t.lower() for t in error_texts)
+
+    def test_process_mention_triggers_pr_analysis(
+        self, mock_socket_mode_client, mock_web_client
+    ):
+        """Test analyze pr command triggers PR analysis handler."""
+        logger = logging.getLogger("test")
+
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_pr_with_gemini"
+                ) as mock_analyze:
+                    mock_analyze.return_value = {
+                        "success": True,
+                        "message": "Performance looks good",
+                        "pr_info": ("openshift", "ovn-kubernetes", ["123"], "4.19"),
+                    }
+
+                    listener = SlackSocketListener(logger=logger)
+
+                    event = create_app_mention_event(
+                        text="<@UBOTID> analyze pr: https://github.com/openshift/ovn-kubernetes/pull/123, compare with 4.19",
+                        user="U12345",
+                        ts="1234567890.123456",
                     )
+
+                    listener._process_mention(event)
+
+                    mock_analyze.assert_called_once()
+                    assert mock_web_client.return_value.chat_postMessage.call_count >= 2
+
+    def test_process_mention_pr_analysis_with_separator(
+        self, mock_socket_mode_client, mock_web_client
+    ):
+        """Test PR analysis splits response by ==== separator into multiple messages."""
+        logger = logging.getLogger("test")
+
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_pr_with_gemini"
+                ) as mock_analyze:
+                    separator = "=" * 80
+                    mock_analyze.return_value = {
+                        "success": True,
+                        "message": f"Impact Assessment{separator}Table 1{separator}Table 2",
+                        "pr_info": ("openshift", "ovn-kubernetes", ["123"], "4.19"),
+                    }
+
+                    listener = SlackSocketListener(logger=logger)
+
+                    event = create_app_mention_event(
+                        text="<@UBOTID> analyze pr: https://github.com/openshift/ovn-kubernetes/pull/123, compare with 4.19",
+                        user="U12345",
+                        ts="1234567890.123456",
+                    )
+
+                    listener._process_mention(event)
+
+                    # ack + 3 sections (header + 2 tables)
+                    assert mock_web_client.return_value.chat_postMessage.call_count == 4
+
+    def test_process_mention_triggers_perf_summary(
+        self, mock_socket_mode_client, mock_web_client
+    ):
+        """Test performance summary command triggers perf summary handler."""
+        logger = logging.getLogger("test")
+
+        with patch("bugzooka.core.config.SLACK_BOT_TOKEN", "xoxb-test-token"):
+            with patch("bugzooka.core.config.SLACK_APP_TOKEN", "xapp-test-token"):
+                with patch(
+                    "bugzooka.integrations.slack_socket_listener.analyze_performance"
+                ) as mock_analyze, patch(
+                    "bugzooka.integrations.slack_socket_listener.parse_perf_summary_args"
+                ) as mock_parse:
+                    mock_parse.return_value = (
+                        ["config1.yaml"],
+                        ["4.19"],
+                        7,
+                        False,
+                    )
+                    mock_analyze.return_value = {
+                        "success": True,
+                        "messages": ["Summary table 1", "Summary table 2"],
+                    }
+
+                    listener = SlackSocketListener(logger=logger)
+
+                    event = create_app_mention_event(
+                        text="<@UBOTID> performance summary 7d",
+                        user="U12345",
+                        ts="1234567890.123456",
+                    )
+
+                    listener._process_mention(event)
+
+                    mock_parse.assert_called_once()
+                    mock_analyze.assert_called_once()
+                    # ack + 2 summary messages
+                    assert mock_web_client.return_value.chat_postMessage.call_count == 3

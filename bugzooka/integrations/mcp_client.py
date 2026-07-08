@@ -110,10 +110,16 @@ async def invoke_mcp_tool(tool: Any, args: dict) -> str:
     """
     Invoke an MCP tool with the given arguments.
 
+    If the result contains image content blocks (from MCP ImageContent),
+    they are collected via the ImageCollector context var for later upload
+    to Slack. Only text content is returned to the LLM.
+
     :param tool: The MCP tool object
     :param args: Arguments to pass to the tool
     :return: Tool result as string
     """
+    from bugzooka.integrations.image_collector import get_collector
+
     if hasattr(tool, "ainvoke"):
         result = await tool.ainvoke(args)
     else:
@@ -124,13 +130,32 @@ async def invoke_mcp_tool(tool: Any, args: dict) -> str:
     if isinstance(result, str):
         return result
     elif isinstance(result, list) and len(result) > 0:
-        # List of message dicts: [{'type': 'text', 'text': '...', 'id': '...'}]
-        if isinstance(result[0], dict) and 'text' in result[0]:
-            return result[0]['text']
+        if isinstance(result[0], dict):
+            text_parts = []
+            has_images = False
+            collector = get_collector()
+            tool_name = getattr(tool, "name", "unknown_tool")
+            for block in result:
+                if block.get("type") == "text":
+                    text_parts.append(block["text"])
+                elif block.get("type") == "image":
+                    has_images = True
+                    if collector:
+                        b64 = block.get("base64") or block.get("data", "")
+                        mime = block.get("mime_type") or block.get(
+                            "mimeType", "image/png"
+                        )
+                        collector.add_image(b64, mime, tool_name)
+
+            if text_parts:
+                return "\n".join(text_parts)
+            if has_images:
+                return "[Chart image generated successfully]"
+            return str(result)
         # List of ToolMessage objects
-        elif hasattr(result[0], 'content'):
+        elif hasattr(result[0], "content"):
             return result[0].content
-    elif hasattr(result, 'content'):
+    elif hasattr(result, "content"):
         # ToolMessage or similar message object
         return result.content
 

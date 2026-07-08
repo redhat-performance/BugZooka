@@ -1,7 +1,7 @@
 {
   "mcp_servers": {
     "orion_mcp_server": {
-      "url": "http://localhost:3030/mcp",
+      "url": "http://127.0.0.1:3030/mcp",
       "transport": "streamable_http"
     }
   }
