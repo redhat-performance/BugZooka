@@ -239,11 +239,20 @@ def construct_all_orion_viz_urls(view_url):
             except Exception:
                 continue
             html_files = [f for f in files if f.endswith(".html")]
-            if html_files:
+            if not html_files:
+                continue
+            artifacts_url = f"{GCSWEB_BASE_URL}{step_artifacts.replace('gs://', '')}"
+            if len(html_files) == 1:
                 html_name = gcs_basename(html_files[0])
                 test_name = strip_step_prefixes(folder)
-                artifacts_url = f"{GCSWEB_BASE_URL}{step_artifacts.replace('gs://', '')}"
                 viz_urls[test_name] = f"{artifacts_url}{html_name}"
+            else:
+                for html_file in html_files:
+                    html_name = gcs_basename(html_file)
+                    test_name = strip_step_prefixes(
+                        html_name.removesuffix("_viz.html")
+                    )
+                    viz_urls[test_name] = f"{artifacts_url}{html_name}"
 
         return viz_urls if viz_urls else None
     except Exception as e:
@@ -279,6 +288,15 @@ def _construct_single_viz_url(view_url, step_name):
                     f"{folder}/{candidate}/artifacts/"
                 )
                 html_files = [f for f in files if f.endswith(".html")]
+                if len(html_files) > 1:
+                    viz_urls = {}
+                    for html_file in html_files:
+                        html_name = gcs_basename(html_file)
+                        test_name = strip_step_prefixes(
+                            html_name.removesuffix("_viz.html")
+                        )
+                        viz_urls[test_name] = f"{artifacts_url}{html_name}"
+                    return viz_urls
                 if html_files:
                     return f"{artifacts_url}{gcs_basename(html_files[0])}"
                 return artifacts_url
