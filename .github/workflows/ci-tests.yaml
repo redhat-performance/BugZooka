@@ -5,10 +5,13 @@ on:
     branches:
       - master
       - main
-  pull_request_target:
+  pull_request:
     branches:
       - master
       - main
+
+permissions:
+  contents: read
 
 jobs:
   lint:
